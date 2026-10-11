@@ -25,6 +25,42 @@ text is a poor fit, and keeps numbers, dates and counting in code.
 The survey of where Jev fits, and how each fit was built and checked, is in
 [docs/jev-use-cases.md](docs/jev-use-cases.md).
 
+## Screenshots
+
+`tradingagents ui` serves the whole workflow in a browser. Analyze, Sentiment
+and Backtest below show the built-in sample data (open any page with `?demo`);
+Reports shows a saved run, Company shows live figures, and Screens runs on the
+India database's latest snapshot.
+
+![The overview page: trading research, argued out by a team of AI agents](assets/ui/landing.png)
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/ui/analyze.png" alt="Analyze: a run in progress, with each desk of the pipeline and its LLM calls, tool calls and tokens"></td>
+    <td width="50%"><img src="assets/ui/sentiment.png" alt="Sentiment: Jev's judgment of every news article and social post, and which were kept or dropped"></td>
+  </tr>
+  <tr>
+    <td><b>Analyze</b>: watch each desk of the pipeline as the run streams in.</td>
+    <td><b>Sentiment</b>: every item Jev judged, its stance, and whether it was kept or dropped as a duplicate, off-topic or an injected instruction.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/ui/reports.png" alt="Reports: a saved run's Portfolio Manager decision, readable section by section"></td>
+    <td><img src="assets/ui/company.png" alt="Company: one stock's price, key ratios, chart and statements"></td>
+  </tr>
+  <tr>
+    <td><b>Reports</b>: read a saved run section by section, down to the Portfolio Manager's rating and thesis.</td>
+    <td><b>Company</b>: one stock laid out like a stock screener, with <b>Analyze with agents</b> one click away.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/ui/screens.png" alt="Screens: a query over every NSE stock and the stocks that match"></td>
+    <td><img src="assets/ui/backtest.png" alt="Backtest: a grid of tickers and dates to run and score"></td>
+  </tr>
+  <tr>
+    <td><b>Screens</b>: filter every NSE stock with a query, then send the matches to a watchlist or to the agents.</td>
+    <td><b>Backtest</b>: run a grid of tickers and dates and compare alpha and hit rate by rating.</td>
+  </tr>
+</table>
+
 ## From research to a paper trade
 
 ![From multi-agent research to a controlled paper trade: TradingAgents-Jev, the Research Bridge and the 129BOB workstation](assets/research-to-paper-trade.jpg)
@@ -48,8 +84,8 @@ the middle, which would start runs and deliver them, is proposed and not built.
 ## Quick start
 
 ```bash
-git clone https://github.com/sushant-mishra-dtu/TradingAgents-Jev.git
-cd TradingAgents-Jev
+git clone https://github.com/sushant-mishra-dtu/Crossclock.git
+cd Crossclock
 uv venv --python 3.12 && source .venv/bin/activate
 uv pip install ".[jev]"
 cp .env.example .env      # add an LLM provider key, and TYPESAFE_API_KEY for Jev
@@ -156,8 +192,8 @@ The selected analysts work at the same time, each on its own tools, and the rese
 
 Clone TradingAgents-Jev:
 ```bash
-git clone https://github.com/sushant-mishra-dtu/TradingAgents-Jev.git
-cd TradingAgents-Jev
+git clone https://github.com/sushant-mishra-dtu/Crossclock.git
+cd Crossclock
 ```
 
 TradingAgents needs Python 3.11 or later. Create a virtual environment in any of your favorite environment managers:
@@ -260,7 +296,7 @@ A saved report also includes `complete_report.html`, the report as one page with
 
 ### Browser UI
 
-The same workflow in a browser, plus a history of past reports and a backtest dashboard. It needs nothing beyond the base install:
+The same workflow in a browser, plus a history of past reports and a backtest dashboard (see the [screenshots](#screenshots)). It needs nothing beyond the base install:
 ```bash
 tradingagents ui       # serves http://localhost:8501 and opens the Analyze page
 tradingagents ui --port 8600 --no-browser
