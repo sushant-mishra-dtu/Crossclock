@@ -154,6 +154,20 @@ def test_pages_and_static_files_are_served(base):
     assert call(base, "/static/%2e%2e/server.py")[0] == 404
 
 
+def test_the_ui_carries_the_crossclock_name(base):
+    for path in ("/", "/analyze"):
+        page = call(base, path)[1].decode()
+        assert "<title>Crossclock</title>" in page, path
+    # The landing page may name the upstream project only in its link to it.
+    landing = call(base, "/")[1].decode().replace("github.com/TauricResearch/TradingAgents", "")
+    assert "TradingAgents" not in landing
+    assert landing.count(">Crossclock<") == 3  # title, header and footer
+    script = call(base, "/static/app.js")[1].decode()
+    assert "TradingAgents" not in script
+    assert '<div class="brand-name">Crossclock</div>' in script
+    assert "· Crossclock`" in script  # every page title
+
+
 def test_options_offer_providers_models_and_key_status(base):
     status, options = call(base, "/api/options")
     assert status == 200

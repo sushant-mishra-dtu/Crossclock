@@ -832,7 +832,7 @@ def backtest_detail(run: str) -> dict:
 # --- HTTP -----------------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "TradingAgentsUI"
+    server_version = "CrossclockUI"
     registry: JobRegistry  # set by make_server
     queue: AnalysisQueue  # set by make_server
     poller = None  # the alerts' delayed-quote PricePoller, when TRADINGAGENTS_ALERT_POLL_MINUTES turns it on
@@ -1170,7 +1170,7 @@ def serve(host: str, port: int, open_browser: bool = True, allow_hosts=()) -> No
     poller = PricePoller.from_config()
     server = make_server(host, port, poller=poller, allow_hosts=allow_hosts)
     url = f"http://{'localhost' if host in ('127.0.0.1', *WILDCARDS) else host}:{port}"
-    print(f"TradingAgents UI on {url}  (Ctrl+C to stop)")
+    print(f"Crossclock UI on {url}  (Ctrl+C to stop)")
     if poller is not None:
         poller.start()
         print(f"Price alerts: checking Yahoo's delayed quotes every {poller.minutes} minutes while NSE is open.")
