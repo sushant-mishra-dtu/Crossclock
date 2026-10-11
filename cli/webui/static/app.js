@@ -1,4 +1,4 @@
-/* TradingAgents browser UI: a small client-side router over the JSON API in server.py.
+/* Crossclock browser UI: a small client-side router over the JSON API in server.py.
  *
  * Each page renders its static parts once and patches its live regions from API
  * snapshots, so polling never resets a form field, a scroll position or a tab.
@@ -216,7 +216,7 @@ function renderSide(nav = activeNav, editable = editableSettings) {
   side.innerHTML = `
     <a class="skip" href="#main">Skip to content</a>
     <div class="side-top">
-      <a class="brand" href="/" title="About TradingAgents">${I.logo()}<div><div class="brand-name">TradingAgents</div><div class="brand-sub">with TypeSafe Jev</div></div></a>
+      <a class="brand" href="/" title="About Crossclock">${I.logo()}<div><div class="brand-name">Crossclock</div><div class="brand-sub">with TypeSafe Jev</div></div></a>
       <button type="button" class="b side-menu" aria-expanded="${attr(sideOpen)}" aria-controls="side-panel">${I.menu}<span class="sr">Menu</span></button>
     </div>
     <div class="side-panel" id="side-panel">
@@ -589,7 +589,7 @@ function route(navigated = false) {
   const root = document.createElement('div');
   main.replaceChildren(root);
   page.mount(root);
-  document.title = `${page.title} · TradingAgents`;
+  document.title = `${page.title} · Crossclock`;
   if (navigated) { window.scrollTo(0, 0); main.focus({ preventScroll: true }); }
 }
 
@@ -1633,7 +1633,7 @@ PAGES['/company'] = {
     if (mine !== company.seq) return;
     company.data = data;
     company.series = data.chart.dates.length > 1 ? priceSeries(data.chart) : null;
-    document.title = `${data.name} · TradingAgents`;
+    document.title = `${data.name} · Crossclock`;
     body.innerHTML = this.html(data);
     if (company.series) {
       const plot = $('#co-plot');
@@ -3032,7 +3032,7 @@ PAGES['/industry'] = {
     if (mine !== industryPage.seq) return;
     industryPage.result = r;
     industryPage.sort = r.sort;
-    document.title = `${r.industry} · TradingAgents`;
+    document.title = `${r.industry} · Crossclock`;
     const snap = r.snapshot;
     const screen = `/screens?${new URLSearchParams({ query: r.query, name: r.industry }).toString()}`;
     $('#in-head').innerHTML = `<p class="crumbs"><a href="/industry" data-link>Industries</a><span class="sep">/</span>${esc(r.industry)}</p>
@@ -3678,7 +3678,7 @@ async function boot() {
   try {
     OPTIONS = DEMO ? DEMO_OPTIONS : await api('/options');
   } catch (e) {
-    $('#main').innerHTML = `<div class="alert alert-neg">${I.alert}<div>Could not reach the TradingAgents server: ${esc(e.message)}. Is <span class="mono">tradingagents ui</span> still running?</div></div>`;
+    $('#main').innerHTML = `<div class="alert alert-neg">${I.alert}<div>Could not reach the Crossclock server: ${esc(e.message)}. Is <span class="mono">tradingagents ui</span> still running?</div></div>`;
     return;
   }
   if (DEMO) { settings = { ...DEMO_OPTIONS.defaults, effort: null, backendUrl: '', custom: { quick: false, deep: false } }; }
