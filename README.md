@@ -2,6 +2,9 @@
 
 **by NoSlack Labs**
 
+Crossclock's next steps: [product and research-speed plan](docs/plan.md) ·
+[progress tracker](docs/progress.md).
+
 The slow lane of a three-speed trading system: LLM agents decide what to trade,
 how much risk to take and when to stand down. The fast lanes, a C++ engine and
 an FPGA pipeline that never wait on a model, live in
