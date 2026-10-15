@@ -9,6 +9,7 @@ from tradingagents.dataflows.errors import NoMarketDataError
 from tradingagents.dataflows.files import replace_file
 from tradingagents.dataflows.symbols import normalize_symbol, safe_ticker_component
 from tradingagents.dataflows.vendors.yahoo.common import raise_for_empty, yf_retry
+from tradingagents.telemetry import current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,13 @@ def load_ohlcv(symbol: str, as_of_date: str, fill_gaps: bool = True) -> pd.DataF
             and _cache_is_fresh(data_file, as_of_dt, now)
         ):
             data = cached
+
+    trace = current_trace()
+    if trace is not None:
+        trace.event("cache_access", {
+            "source": "yfinance", "cache": "ohlcv",
+            "cache_status": "hit" if data is not None else "miss",
+        })
 
     if data is None:
         # yf.download catches every error, a rate limit included, and returns

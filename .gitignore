@@ -234,3 +234,6 @@ graphify-out/
 *.key
 secrets.json
 credentials.json
+
+# Local traces and raw benchmark responses; commit only redacted summaries.
+/results/

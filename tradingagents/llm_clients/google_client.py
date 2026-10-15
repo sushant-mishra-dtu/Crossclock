@@ -4,6 +4,7 @@ from typing import Any
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .base_client import BaseLLMClient, normalize_content
+from .telemetry import observe_sdk_transport, observed_async_generation, observed_generation
 from .validators import validate_model
 
 _GEMINI_VERSION = re.compile(r"^gemini-(\d+)\.(\d+)")
@@ -26,6 +27,9 @@ class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
     Gemini 3 models return content as list of typed blocks.
     This normalizes to string for consistent downstream handling.
     """
+
+    _generate = observed_generation(ChatGoogleGenerativeAI._generate)
+    _agenerate = observed_async_generation(ChatGoogleGenerativeAI._agenerate)
 
     def invoke(self, input, config=None, **kwargs):
         return normalize_content(super().invoke(input, config, **kwargs))
@@ -72,7 +76,7 @@ class GoogleClient(BaseLLMClient):
                 thinking_level = "low"
             llm_kwargs["thinking_level"] = thinking_level
 
-        return NormalizedChatGoogleGenerativeAI(**llm_kwargs)
+        return observe_sdk_transport(NormalizedChatGoogleGenerativeAI(**llm_kwargs), "google", sdk="google")
 
     def validate_model(self) -> bool:
         """Validate model for Google."""

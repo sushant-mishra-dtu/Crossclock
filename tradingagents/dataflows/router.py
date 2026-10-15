@@ -43,6 +43,7 @@ from tradingagents.dataflows.vendors.yahoo.news import (
     get_news_feed_yfinance,
     get_news_yfinance,
 )
+from tradingagents.telemetry import current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +217,28 @@ def no_data_available(error: NoMarketDataError) -> str:
     )
 
 
+def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
+    """Time each routed source separately, including its cache/HTTP children."""
+    trace = current_trace()
+    if trace is None:
+        return impl_func(*args, **kwargs)
+    attributes = {"source": source, "operation": method, "category": category}
+    with trace.scope("source", source, attributes) as span:
+        try:
+            result = impl_func(*args, **kwargs)
+        except Exception as exc:
+            outcome = (
+                "no_data" if isinstance(exc, NoMarketDataError)
+                else "unavailable" if isinstance(exc, VendorUnavailableError)
+                else "not_configured" if isinstance(exc, VendorNotConfiguredError)
+                else "error"
+            )
+            trace.end_span(span, outcome, {"outcome": outcome})
+            raise
+        trace.end_span(span, "ok", {"outcome": "ok"})
+        return result
+
+
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
     category = get_category_for_method(method)
@@ -252,7 +275,7 @@ def route_to_vendor(method: str, *args, **kwargs):
         impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
 
         try:
-            return impl_func(*args, **kwargs)
+            return _retrieve_from_source(impl_func, vendor, method, category, args, kwargs)
         except VendorUnavailableError as e:
             logger.warning("Vendor %r unavailable for %s: %s; trying next vendor.", vendor, method, e)
             # Kept so an all-unavailable chain can say the vendor was the

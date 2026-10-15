@@ -30,6 +30,7 @@ from tradingagents import __version__
 from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.files import replace_file
+from tradingagents.telemetry import current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,18 @@ def _user_agent() -> str:
 def _fetch_json(url: str) -> dict:
     """Read a public EDGAR document, respecting SEC's identification rule."""
     try:
-        response = requests.get(url, headers={"User-Agent": _user_agent()}, timeout=30)
+        trace = current_trace()
+        if trace is None:
+            response = requests.get(url, headers={"User-Agent": _user_agent()}, timeout=30)
+        else:
+            trace.gap("requests_transport_attempts_unobserved")
+            with trace.scope("transport_dispatch", "sec_edgar.get", {
+                "source": "sec_edgar", "transport": "requests", "coverage": "dispatch",
+            }) as span:
+                response = requests.get(url, headers={"User-Agent": _user_agent()}, timeout=30)
+                trace.end_span(span, "ok" if response.status_code < 400 else "error", {
+                    "http_status": response.status_code,
+                })
         response.raise_for_status()
         return response.json()
     except requests.RequestException as exc:
@@ -123,9 +135,16 @@ def _cached_json(url: str, name: str) -> dict:
     path = Path(get_config()["data_cache_dir"]) / "sec_edgar" / name
     if path.exists() and time.time() - path.stat().st_mtime < _CACHE_TTL_SECONDS:
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            trace = current_trace()
+            if trace is not None:
+                trace.event("cache_access", {"source": "sec_edgar", "cache": "json", "cache_status": "hit"})
+            return data
         except ValueError:
             pass  # a truncated file is a miss, not a failure
+    trace = current_trace()
+    if trace is not None:
+        trace.event("cache_access", {"source": "sec_edgar", "cache": "json", "cache_status": "miss"})
     data = _fetch_json(url)
     path.parent.mkdir(parents=True, exist_ok=True)
     replace_file(path, lambda temp: Path(temp).write_text(json.dumps(data), encoding="utf-8"))

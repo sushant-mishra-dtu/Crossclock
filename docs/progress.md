@@ -1,16 +1,16 @@
 # Crossclock progress
 
-Last updated: 13 October 2026 (Asia/Calcutta)  
+Last updated: 14 October 2026 (Asia/Calcutta)
 Execution plan: [plan.md](plan.md)  
 Baseline reviewed: `4b2a3f781fdda6cb3a7594c3191122d4fe5b6836`
 
 ## Current position
 
-The product/research-speed plan and this tracker are complete. The improvement sprint has not started. Planning reviewed the repository and current primary-source product/technical documentation. It did not run application tests, launch the UI, benchmark live models, contact users or implement product changes.
+The measurement sprint started on 14 October 2026. C01 tracing, deterministic fixtures and bounded live model measurements are implemented and verified. Three graph reports completed before the local NVIDIA request guard stopped the run. [The benchmark record](benchmarks/c01.md) distinguishes fixture behavior, live component probes and live models on a synthetic corpus. C01 remains open because only one of three registered cold/warm pairs completed.
 
-First implementation task: **C01, persist a timing/cost trace and establish the baseline**. Run **C02, user-task and data-access discovery**, alongside it when the project owner is available. Choose the first optimization from measured results; retries, sequential sentiment retrieval and memory settlement are source-backed candidates.
+Active task: **C01, persist a timing/cost trace and establish the baseline**. Complete the matched baseline sample set within a registered available NVIDIA allowance. The first selected experiment is shorter source-grounded bull/bear arguments, with a held-out claim/coverage check. Run **C02, user-task and data-access discovery**, alongside it when the project owner is available.
 
-The initial audience is assumed to be an NSE watchlist investor, with a US-equity validation cohort. User validation, named owners, start date and a model/data spending budget remain open. There is no achieved speedup or measured completion-time baseline yet.
+The initial audience remains an NSE watchlist investor hypothesis, with US-equity validation. The owner authorized limited NVIDIA quota use and Jev up to US$1. Keys were checked without displaying them and both live services responded. No achieved product speedup, customer validation or real-source completion-time claim exists.
 
 ## Status definitions
 
@@ -29,7 +29,7 @@ Evidence labels are separate: **source reviewed**, **external source reviewed**,
 | ID | Task | Status | Owner | Evidence / next action |
 | --- | --- | --- | --- | --- |
 | C00 | Repository research, plan and progress tracker | Complete | Codex | [Plan](plan.md), linked repository evidence and dated external sources; documentation only |
-| C01 | Instrumentation and baseline | Not started | Unassigned: engineering | Extend existing counters/timing; capture node, source, retry, queue and first-useful-result spans; establish matched cold/warm workload |
+| C01 | Instrumentation and baseline | In progress | Codex | [Tracing and initial diagnostic](benchmarks/c01.md): 24 offline samples; six live probes per provider; three graph completions, one local guard failure, two unstarted; 111 final focused tests pass; three paired baseline repetitions remain incomplete |
 | C02 | User tasks and data-access inventory | Not started | Unassigned: product owner | Validate target cohort, prepare three pilot tasks, record access/rights and any actual user feedback |
 | C03 | Deadlines, retries, cancel and partial states | Not started | Unassigned: engineering | After C01; enforce budgets across SDK and outer retries; verify cancellation/restart and coverage labels |
 | C04 | Shared evidence and bounded retrieval | Not started | Unassigned: engineering | After C01; prototype one ticker's source reuse, freshness/as-of enforcement and in-flight deduplication |
@@ -69,15 +69,15 @@ Targets below are proposals from the plan. A blank baseline is unknown, never ze
 | --- | --- | --- | --- |
 | Warm first useful facts, p50 / p95 | Not measured | Not implemented | <=5 s / <=10 s for the proposed Quick workflow |
 | Quick completed brief, p50 / p95 | No Quick path | Not implemented | <=30 s / <=60 s under the registered workload |
-| Standard complete report, p50 / p95 | Not measured | Not measured | >=30% / >=20% reduction against matched current workflow |
+| Standard complete report, p50 / p95 | Initial live-model synthetic-corpus diagnostic: two cold completions (287.182 / 178.384 s), one warm (175.285 s); p95 unqualified | Not measured | Complete paired sample set before claiming >=30% / >=20% improvement |
 | Cold first visit and final report | Not measured | Not measured | Measure separately from warm cache results |
 | Queue wait and 10-symbol completion | Not measured | Not measured | Identify whether provider limits or serial scheduling dominate |
-| Report cost and failed-run spend | Not measured | Not measured | Include Jev, retries and background work; mark missing usage |
+| Report cost and failed-run spend | Jev estimate $0.00142107 total for this attempt; NVIDIA dollar cost unknown, 102 sends including probes | Not measured | Preserve unknown usage on guard-failed generations; [budget record](benchmarks/c01.md) |
 | Source-request count / cache eligibility | Not measured | Not measured | Demonstrate fewer redundant requests with freshness preserved |
 | Supported or explicitly unsupported material claims | Not audited | Not audited | >=95% on initial frozen claim set; distinguish citation presence from correctness |
 | Audited material numeric errors | Not audited | Not audited | Zero; any material mismatch blocks the release candidate |
 | Material-event recall / claim accuracy | Not audited | Not audited | No more than five-percentage-point drop versus full workflow; assess uncertainty |
-| Completion / partial / failure / deadline-miss rates | Not measured | Not measured | Publish together with latency so fast failures do not inflate improvement |
+| Completion / partial / failure / deadline-miss rates | Initial synthetic-source live workload: 3 completed, 1 local guard failure, 2 unstarted of 6 registered; deadlines unqualified | Not measured | Publish alongside latency; these are diagnostic outcomes, not operational rates |
 | Human research-task time | No participants observed | No participants observed | Pilot median improvement >=30%; >=4/5 complete each task unaided |
 
 Use at least three paired repetitions per instrument/cache regime for diagnosis, and at least 100 comparable runs per claimed mode/regime before reporting p95 as qualified. Live runs require a recorded spending cap. See [measurement rules](plan.md#measurement-and-quality-gates) for the full protocol.
@@ -88,13 +88,13 @@ Use at least three paired repetitions per instrument/cache regime for diagnosis,
 | --- | --- | --- |
 | Main user segment | NSE investor hypothesis; US validation retained | C02 observes actual tasks and willingness to return/pay |
 | First release setting | Local application assumed | Confirm whether local use meets pilot needs before designing hosted accounts |
-| Provider/model and budget | Repository supports multiple providers; none selected for the benchmark | C01 records exact IDs, endpoint, settings, quotas and spending cap |
-| Current report time/cost | Unknown | C01 measures; no "X times faster" claim until comparable samples exist |
+| Provider/model and budget | Nemotron 3 Super and Jev 1.13 pinned; Jev total cap US$1; NVIDIA remaining quota unknown | [Registered limits and exact settings](benchmarks/c01.md#registered-workloads-and-budgets) |
+| Current report time/cost | Initial diagnostic recorded; comparable repetition set incomplete | [Measured limits and remaining acceptance](benchmarks/c01.md#attribution-correction-and-remaining-acceptance); no speedup claim |
 | Historical and transcript coverage | Incomplete/unverified | C02/C09 record source availability, knowledge times and reuse permissions |
 | Data distribution rights | No deployment-specific entitlement review performed | Check actual source agreements before hosting or redistributing data |
-| Named owners/start date | Unassigned | Project owner assigns before the relative sprint begins |
+| Named owners/start date | C01 owned by Codex; started 14 October 2026 | Product/study owners remain open |
 | Quality reference set | Not created | Freeze questions, claims, material events and held-out evaluation cases before optimization |
-| Existing API keys/services | Not inspected or exercised for this task | Benchmark setup checks availability without recording secrets |
+| Existing API keys/services | Both keys confirmed locally; six successful probes per provider | Secrets stay in ignored env files; trace metadata excludes credentials |
 
 These are open prerequisites, not failed attempts. No task is currently marked Blocked.
 
@@ -102,7 +102,7 @@ These are open prerequisites, not failed attempts. No task is currently marked B
 
 | Gate | Current verdict | Required evidence |
 | --- | --- | --- |
-| G1: reproducible baseline | Not evaluated | Comparable workloads, versioned configuration and complete traces |
+| G1: reproducible baseline | Initial diagnostic only; incomplete | Complete three paired repetitions, separate process initialization, preserve configuration/trace provenance and coverage gaps |
 | G2: data and execution correctness | Not evaluated | Freshness/as-of, duplicate-request, isolation, deadline, cancel and resume cases |
 | G3: useful speed improvement | Not evaluated | Matched latency/cost results plus coverage and quality checks |
 | G4: user value | Not evaluated | Observed task completion/time and reasons users would return |
@@ -118,6 +118,10 @@ Planning completion passes none of the product gates.
 | 2026-10-13 | Researched product workflows and official technical/data documentation | Dated links and resulting recommendations are recorded in the [plan](plan.md#external-research-and-implications) |
 | 2026-10-13 | Created plan and initialized tracker | C00 complete; implementation, performance benchmarks and user study remain unstarted |
 | 2026-10-13 | Verified documentation links and task mapping | All local link targets exist; C01-C14 match across both documents; tracked diff whitespace check passed; README links to both files |
+| 2026-10-14 | Started C01 instrumentation and benchmark implementation | Trace collector, callbacks, queue/persistence/source/cache/retry/transport observation; [benchmark record](benchmarks/c01.md) |
+| 2026-10-14 | Verified fixtures and live access within owner-authorized limits | 24 offline samples with no failures; six successful Nemotron and six Jev probes; Jev estimated $0.00007812; raw evidence ignored locally |
+| 2026-10-14 | Ran bounded live graph diagnostic and recorded the stop | Three completions, one local NVIDIA send-guard failure, two unstarted; 102 total NVIDIA sends; 32 Jev sends estimated $0.00142107; no account quota change |
+| 2026-10-14 | Corrected callback ancestry and verified regressions | 2,018 broad tests passed with one compatibility failure subsequently fixed; 111 final targeted tests passed; 101 raw parent links derived offline with exact originals retained; lint/whitespace checks passed |
 
 ## Next update template
 

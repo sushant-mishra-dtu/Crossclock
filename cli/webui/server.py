@@ -266,6 +266,7 @@ def analysis_list(registry: JobRegistry) -> list[dict]:
 
 def analysis_detail(job: AnalysisJob) -> dict:
     snap = job.snapshot()
+    trace = snap.get("telemetry")
     activity = [{"time": t, "kind": kind, "detail": str(content)[:600]}
                 for t, kind, content in snap["messages"]]
     activity += [{"time": t, "kind": "Tool", "detail": f"{name}({_args(args)})"}
@@ -284,6 +285,13 @@ def analysis_detail(job: AnalysisJob) -> dict:
         "activity": activity[:200],
         "reportDir": str(Path(report_path).parent) if report_path else None,
         "judgments": snap["judgments"],
+        "telemetry": {
+            "runId": trace["run_id"],
+            "milestones": trace["milestones"],
+            "gaps": trace["telemetry_gaps"],
+            "cost": trace["cost"],
+            "persistenceError": snap.get("telemetry_error"),
+        } if trace else None,
     }
 
 

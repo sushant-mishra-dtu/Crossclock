@@ -12,9 +12,17 @@ import openai
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
+from tradingagents.telemetry import current_trace
+
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
 from .capabilities import get_capabilities
+from .telemetry import (
+    observe_sdk_transport,
+    observed_async_generation,
+    observed_generation,
+    observed_invocation,
+)
 from .validators import validate_model
 
 logger = logging.getLogger(__name__)
@@ -65,6 +73,10 @@ class NormalizedChatOpenAI(ChatOpenAI):
     stays small.
     """
 
+    _generate = observed_generation(ChatOpenAI._generate)
+    _agenerate = observed_async_generation(ChatOpenAI._agenerate)
+
+    @observed_invocation
     def invoke(self, input, config=None, **kwargs):
         for attempt, delay in enumerate((*_TRANSIENT_BACKOFF_SECONDS, None), start=1):
             try:
@@ -76,7 +88,19 @@ class NormalizedChatOpenAI(ChatOpenAI):
                     "%s: transient provider error (%s); retrying in %ds (attempt %d/%d)",
                     self.model_name, exc, delay, attempt, len(_TRANSIENT_BACKOFF_SECONDS),
                 )
-                if _wait_or_cancelled(delay):
+                trace = current_trace()
+                if trace is None:
+                    cancelled = _wait_or_cancelled(delay)
+                else:
+                    with trace.scope("retry_wait", "openai_outer_retry", {
+                        "provider": getattr(self, "_telemetry_provider", "openai"),
+                        "model": self.model_name, "attempt": attempt,
+                        "delay_seconds": delay,
+                    }) as span:
+                        cancelled = _wait_or_cancelled(delay)
+                        if cancelled:
+                            trace.end_span(span, "cancelled")
+                if cancelled:
                     raise
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
@@ -375,7 +399,7 @@ class OpenAIClient(BaseLLMClient):
             llm_kwargs[key] = self.kwargs[key]
 
         # The subclass (provider quirks) comes from the registry spec.
-        return chat_cls(**llm_kwargs)
+        return observe_sdk_transport(chat_cls(**llm_kwargs), self.provider)
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""

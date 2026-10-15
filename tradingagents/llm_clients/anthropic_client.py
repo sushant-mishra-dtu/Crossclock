@@ -4,6 +4,7 @@ from typing import Any
 from langchain_anthropic import ChatAnthropic
 
 from .base_client import BaseLLMClient, normalize_content
+from .telemetry import observe_sdk_transport, observed_async_generation, observed_generation
 from .validators import validate_model
 
 _PASSTHROUGH_KWARGS = (
@@ -46,6 +47,9 @@ class NormalizedChatAnthropic(ChatAnthropic):
     downstream handling.
     """
 
+    _generate = observed_generation(ChatAnthropic._generate)
+    _agenerate = observed_async_generation(ChatAnthropic._agenerate)
+
     def invoke(self, input, config=None, **kwargs):
         return normalize_content(super().invoke(input, config, **kwargs))
 
@@ -71,7 +75,7 @@ class AnthropicClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
-        return NormalizedChatAnthropic(**llm_kwargs)
+        return observe_sdk_transport(NormalizedChatAnthropic(**llm_kwargs), "anthropic", sdk="anthropic")
 
     def validate_model(self) -> bool:
         """Validate model for Anthropic."""

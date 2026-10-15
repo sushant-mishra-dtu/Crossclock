@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from .base_client import BaseLLMClient, normalize_content
+from .telemetry import observe_sdk_transport, observed_async_generation, observed_generation
 from .validators import validate_model
 
 # Bedrock has no global default region; us-west-2 hosts the broadest model set.
@@ -30,6 +31,9 @@ def _bedrock_class():
 
     class NormalizedChatBedrockConverse(ChatBedrockConverse):
         """ChatBedrockConverse with normalized (string) content output."""
+
+        _generate = observed_generation(ChatBedrockConverse._generate)
+        _agenerate = observed_async_generation(ChatBedrockConverse._agenerate)
 
         def invoke(self, input, config=None, **kwargs):
             return normalize_content(super().invoke(input, config, **kwargs))
@@ -69,7 +73,7 @@ class BedrockClient(BaseLLMClient):
         for key in ("temperature", "max_tokens", "max_retries", "callbacks"):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
-        return chat_cls(**llm_kwargs)
+        return observe_sdk_transport(chat_cls(**llm_kwargs), "bedrock", sdk="bedrock")
 
     def validate_model(self) -> bool:
         """Validate model for Bedrock (any model ID accepted)."""

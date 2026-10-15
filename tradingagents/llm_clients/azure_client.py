@@ -4,6 +4,7 @@ from typing import Any
 from langchain_openai import AzureChatOpenAI
 
 from .base_client import BaseLLMClient, normalize_content
+from .telemetry import observe_sdk_transport, observed_async_generation, observed_generation
 
 _PASSTHROUGH_KWARGS = (
     "timeout", "max_retries", "api_key", "reasoning_effort", "temperature",
@@ -13,6 +14,9 @@ _PASSTHROUGH_KWARGS = (
 
 class NormalizedAzureChatOpenAI(AzureChatOpenAI):
     """AzureChatOpenAI with normalized content output."""
+
+    _generate = observed_generation(AzureChatOpenAI._generate)
+    _agenerate = observed_async_generation(AzureChatOpenAI._agenerate)
 
     def invoke(self, input, config=None, **kwargs):
         return normalize_content(super().invoke(input, config, **kwargs))
@@ -44,7 +48,7 @@ class AzureOpenAIClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
-        return NormalizedAzureChatOpenAI(**llm_kwargs)
+        return observe_sdk_transport(NormalizedAzureChatOpenAI(**llm_kwargs), "azure")
 
     def validate_model(self) -> bool:
         """Azure accepts any deployed model name."""

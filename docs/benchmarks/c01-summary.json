@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "C01",
+  "measurement_kind": "live_graph_on_synthetic_sources",
+  "source_revision": "be0c3e1ea348a3d262bc8712b54993553791ea1b",
+  "source_tree_sha256": "4cbb23d74687314550390e3f18e069cecec456542aec53cf369573be25fe78c1",
+  "fixture_sha256": "5e53116fc407d2ca0ec16a588ff2b58ea8fcfa16840a89ef77f7524df81d33d4",
+  "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+  "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
+  "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+  "workload": {
+    "symbol": "NVDA",
+    "trade_date": "2026-01-09",
+    "asset_type": "stock",
+    "analysts": [
+      "market",
+      "social",
+      "news",
+      "fundamentals"
+    ]
+  },
+  "groups": [
+    {
+      "mode": "cold_fixture_cache",
+      "registered_n": 3,
+      "completed_n": 2,
+      "statuses": {
+        "completed": 2,
+        "not_started": 1
+      },
+      "median_wall_ms": 232783.15399999998,
+      "median_parallel_analyst_max_path_ms": 34069.8615,
+      "top_three_latency_contributors": [
+        {
+          "node": "Bear Researcher",
+          "median_inclusive_ms": 36521.551999999996,
+          "n": 2
+        },
+        {
+          "node": "Market Analyst",
+          "median_inclusive_ms": 34069.8615,
+          "n": 2
+        },
+        {
+          "node": "Bull Researcher",
+          "median_inclusive_ms": 29920.186,
+          "n": 2
+        }
+      ],
+      "tail": "unestimated: registered n=3 per regime"
+    },
+    {
+      "mode": "warm_fixture_cache",
+      "registered_n": 3,
+      "completed_n": 1,
+      "statuses": {
+        "completed": 1,
+        "failed": 1,
+        "not_started": 1
+      },
+      "median_wall_ms": 175285.055,
+      "median_parallel_analyst_max_path_ms": 42183.163,
+      "top_three_latency_contributors": [
+        {
+          "node": "Fundamentals Analyst",
+          "median_inclusive_ms": 42183.163,
+          "n": 1
+        },
+        {
+          "node": "Market Analyst",
+          "median_inclusive_ms": 40114.521,
+          "n": 1
+        },
+        {
+          "node": "Bear Researcher",
+          "median_inclusive_ms": 37940.038,
+          "n": 1
+        }
+      ],
+      "tail": "unestimated: registered n=3 per regime"
+    }
+  ],
+  "nvidia_budget": {
+    "http_attempts": 96,
+    "max_attempts": 96,
+    "reserved_worst_case_usd": 0.0,
+    "cap_usd": null,
+    "stopped": true,
+    "stop_reason": "send_budget_exhausted"
+  },
+  "jev_budget": {
+    "http_attempts": 26,
+    "max_attempts": 356,
+    "reserved_worst_case_usd": 0.071565312,
+    "cap_usd": 0.98,
+    "stopped": true,
+    "stop_reason": null
+  },
+  "jev_reported_estimated_cost_usd": 0.0013429499999999999,
+  "status": "initial_diagnostic_incomplete_pairs",
+  "interpretation": "Frozen synthetic sources with live models. Only one paired repetition completed; no speedup or qualified p95 claim.",
+  "component_probe_nvidia_sends": 6,
+  "component_probe_jev_sends": 6,
+  "total_nvidia_sends": 102,
+  "total_jev_sends": 32,
+  "total_jev_estimated_usd": 0.00142107,
+  "total_jev_reserved_worst_case_usd": 0.088080384,
+  "raw_evidence_dir": "results/benchmarks/c01-live-graph-20261014",
+  "attribution_correction": "101 unique parent repairs; originals preserved; timing, token and send counts unchanged",
+  "samples": [
+    {
+      "run_id": "live-graph-cold_fixture_cache-01",
+      "mode": "cold_fixture_cache",
+      "repetition": 1,
+      "status": "completed",
+      "wall_ms": 287181.849,
+      "available_generated_report_ms": 108394.411,
+      "nvidia_http_attempts": 36,
+      "jev_http_attempts": 13,
+      "source_metrics": {
+        "requests": 27,
+        "fetches": 27,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    },
+    {
+      "run_id": "live-graph-cold_fixture_cache-02",
+      "mode": "cold_fixture_cache",
+      "repetition": 2,
+      "status": "completed",
+      "wall_ms": 178384.459,
+      "available_generated_report_ms": 11526.929,
+      "nvidia_http_attempts": 23,
+      "jev_http_attempts": 7,
+      "source_metrics": {
+        "requests": 15,
+        "fetches": 15,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    },
+    {
+      "run_id": "live-graph-cold_fixture_cache-03",
+      "mode": "cold_fixture_cache",
+      "repetition": 3,
+      "status": "not_started",
+      "wall_ms": 0.186,
+      "available_generated_report_ms": null,
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    },
+    {
+      "run_id": "live-graph-warm_fixture_cache-01",
+      "mode": "warm_fixture_cache",
+      "repetition": 1,
+      "status": "completed",
+      "wall_ms": 175285.055,
+      "available_generated_report_ms": 24467.252,
+      "nvidia_http_attempts": 36,
+      "jev_http_attempts": 6,
+      "source_metrics": {
+        "requests": 28,
+        "fetches": 4,
+        "cache_hits": 24,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    },
+    {
+      "run_id": "live-graph-warm_fixture_cache-02",
+      "mode": "warm_fixture_cache",
+      "repetition": 2,
+      "status": "failed",
+      "wall_ms": 1142.146,
+      "available_generated_report_ms": null,
+      "nvidia_http_attempts": 1,
+      "jev_http_attempts": 0,
+      "source_metrics": {
+        "requests": 5,
+        "fetches": 0,
+        "cache_hits": 5,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    },
+    {
+      "run_id": "live-graph-warm_fixture_cache-03",
+      "mode": "warm_fixture_cache",
+      "repetition": 3,
+      "status": "not_started",
+      "wall_ms": 0.241,
+      "available_generated_report_ms": null,
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      }
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from yfinance.exceptions import YFPricesMissingError, YFRateLimitError
 
 from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.net import vendor_reachable
+from tradingagents.telemetry import current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,11 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
     itself: a Ticker keeps a failed ``info`` fetch as done, so asking the same
     one again reads an empty profile.
     """
+    trace = current_trace()
+    if trace is not None:
+        # yfinance uses curl_cffi internally. This wrapper observes the source
+        # call and our waits, not the library's individual HTTP requests.
+        trace.gap("yfinance_transport_attempts_unobserved")
     for attempt in range(max_retries + 1):
         try:
             return func()
@@ -65,7 +71,14 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
             if attempt < max_retries:
                 delay = base_delay * (2 ** attempt)
                 logger.warning(f"Yahoo Finance rate limited, retrying in {delay:.0f}s (attempt {attempt + 1}/{max_retries})")
-                time.sleep(delay)
+                if trace is None:
+                    time.sleep(delay)
+                else:
+                    with trace.scope("retry_wait", "yfinance_retry", {
+                        "source": "yfinance", "attempt": attempt + 1,
+                        "delay_seconds": delay,
+                    }):
+                        time.sleep(delay)
             else:
                 raise VendorUnavailableError(
                     f"Yahoo Finance rate limited after {max_retries} retries: {exc}"

@@ -1,5 +1,6 @@
 """The web UI's background jobs and history readers, without Streamlit or an LLM."""
 
+import json
 import threading
 import time
 from datetime import datetime
@@ -218,3 +219,73 @@ def test_analysis_job_shows_provider_retries(config, monkeypatch):
     job = jobs.AnalysisJob("NVDA", "2026-09-01", "stock", ["market"], config).start()
     _finish(job)
     assert any("retrying in 10s" in text for _, _, text in job.snapshot()["messages"])
+
+
+def test_success_trace_distinguishes_report_availability_from_rendering(config):
+    job = jobs.AnalysisJob("NVDA", "2026-09-01", "stock", ["market"], config).start()
+    _finish(job)
+    trace = json.loads(job.trace_path.read_text(encoding="utf-8"))
+    assert trace["status"] == "ok"
+    assert trace["run_id"] == job.id
+    assert {"submitted", "started", "generated_report", "persisted_report", "finished"} <= trace["milestones"].keys()
+    assert "first_useful_result" not in trace["milestones"]
+    assert "first_useful_result_render_unobserved" in trace["telemetry_gaps"]
+    assert "final_report_validation_unobserved" in trace["telemetry_gaps"]
+    assert {"queue", "setup", "graph", "persistence"} <= {s["kind"] for s in trace["spans"]}
+    assert all(s["duration_ms"] is not None for s in trace["spans"])
+    assert trace["cost"]["amount"] is None
+    assert DECISION not in json.dumps(trace)
+    assert job.snapshot()["telemetry"] == trace
+
+
+@pytest.mark.parametrize("outcome", ["failure", "cancellation"])
+def test_unsuccessful_runs_also_persist_safe_traces(config, monkeypatch, outcome):
+    if outcome == "failure":
+        def boom(self, *args):
+            raise RuntimeError("private vendor error")
+        monkeypatch.setattr(FakeGraph, "create_run_state", boom)
+    else:
+        FakeGraph.gate = threading.Event()
+    job = jobs.AnalysisJob("NVDA", "2026-09-01", "stock", ["market"], config).start()
+    if outcome == "cancellation":
+        job.cancel()
+        FakeGraph.gate.set()
+    _finish(job)
+    trace = json.loads(job.trace_path.read_text(encoding="utf-8"))
+    assert trace["status"] == ("error" if outcome == "failure" else "cancelled")
+    assert "persisted_report" not in trace["milestones"]
+    assert "private vendor error" not in json.dumps(trace)
+    assert trace["finished_at_utc"]
+
+
+def test_waiting_queue_time_survives_cancellation_before_start(config):
+    FakeGraph.gate = threading.Event()
+    a = jobs.AnalysisJob("NVDA", "2026-09-01", "stock", ["market"], config)
+    b = jobs.AnalysisJob("AAPL", "2026-09-01", "stock", ["market"], config)
+    queue = jobs.AnalysisQueue(jobs.JobRegistry())
+    queue.submit([a, b])
+    try:
+        time.sleep(0.025)  # the first run holds, so B spends this interval waiting
+        assert queue.cancel(b.id)
+        trace = json.loads(b.trace_path.read_text(encoding="utf-8"))
+        [waiting] = [s for s in trace["spans"] if s["kind"] == "queue"]
+        assert waiting["status"] == "cancelled"
+        assert waiting["duration_ms"] >= 20
+        assert "started" not in trace["milestones"]
+        assert not b.started and b.submitted
+    finally:
+        a.cancel()
+        FakeGraph.gate.set()
+        a.wait(5)
+
+
+def test_trace_write_failure_keeps_success_and_exposes_gap(config, monkeypatch):
+    def cannot_persist(self, path):
+        raise PermissionError("private filesystem path")
+
+    monkeypatch.setattr(jobs.RunTrace, "persist", cannot_persist)
+    job = jobs.AnalysisJob("NVDA", "2026-09-01", "stock", ["market"], config).start()
+    _finish(job)
+    assert job.status == jobs.DONE and job.report_path.exists()
+    assert job.telemetry_error == "PermissionError"
+    assert "trace_persistence_failed" in job.snapshot()["telemetry"]["telemetry_gaps"]

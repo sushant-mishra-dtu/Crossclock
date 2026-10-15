@@ -25,6 +25,7 @@ from tradingagents.backtest import run_backtest, summarize
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.analyst_execution import build_analyst_execution_plan
 from tradingagents.memory import TradingMemoryLog
+from tradingagents.telemetry import RunTrace, use_trace
 
 PENDING, RUNNING, DONE, FAILED, CANCELLED = "pending", "running", "done", "failed", "cancelled"
 
@@ -96,6 +97,9 @@ class AnalysisJob:
     started: float = 0.0
     finished: float | None = None
     judgments: dict | None = None  # the Sentiment Analyst's Jev judgments, once made
+    submitted: float = 0.0
+    trace_path: Path | None = None
+    telemetry_error: str | None = None
 
     def __post_init__(self):
         self.analysts = [a for a in ANALYST_ORDER if a in set(self.analysts)]
@@ -107,6 +111,25 @@ class AnalysisJob:
         self.lock = threading.Lock()
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
+        self.trace: RunTrace | None = None
+        self._queue_span: str | None = None
+        self._trace_finished = False
+
+    def mark_submitted(self) -> None:
+        """Start the monotonic run clock when the request enters the scheduler."""
+        if self.trace is not None:
+            return
+        self.submitted = time.time()
+        self.trace = RunTrace(run_id=self.id, configuration=self.config, workload={
+            "ticker": self.ticker, "trade_date": self.trade_date,
+            "asset_type": self.asset_type, "analysts": self.analysts,
+            "entrypoint": "webui",
+        })
+        self.stats.trace = self.trace
+        self.trace.milestone("submitted")
+        self.trace.gap("first_useful_result_render_unobserved")
+        self.trace.gap("final_report_validation_unobserved")
+        self._queue_span = self.trace.start_span("queue", "queue_wait")
 
     @property
     def label(self) -> str:
@@ -117,6 +140,10 @@ class AnalysisJob:
         return self.status in (PENDING, RUNNING)
 
     def start(self) -> AnalysisJob:
+        self.mark_submitted()
+        self.trace.end_span(self._queue_span)
+        self._queue_span = None
+        self.trace.milestone("started")
         self.started = time.time()
         self.status = RUNNING
         self._thread = threading.Thread(target=self._run, name=f"analysis-{self.id}", daemon=True)
@@ -139,6 +166,30 @@ class AnalysisJob:
             self.buffer.add_message("System", reason)
             self.status = CANCELLED
             self.finished = time.time()
+        self._finish_trace()
+
+    def _finish_trace(self) -> None:
+        """Trace failures never change the analysis result or hide its report."""
+        if self._trace_finished:
+            return
+        self.mark_submitted()
+        if self._queue_span is not None:
+            self.trace.end_span(self._queue_span, status="cancelled")
+            self._queue_span = None
+        if self.status in {CANCELLED, FAILED}:
+            self.trace.milestone(self.status)
+        self.trace.finish({DONE: "ok", FAILED: "error", CANCELLED: "cancelled"}.get(
+            self.status, self.status))
+        self._trace_finished = True
+        try:
+            self.trace_path = self.trace.persist(
+                Path(self.config.get("results_dir", "results")) / "telemetry" /
+                f"{safe_ticker_component(self.id)}.json")
+        except Exception as exc:
+            self.telemetry_error = type(exc).__name__
+            self.trace.gap("trace_persistence_failed")
+            log.warning("Telemetry for analysis %s could not be saved (%s)",
+                        self.id, self.telemetry_error)
 
     def elapsed(self) -> float:
         return (self.finished or time.time()) - self.started if self.started else 0.0
@@ -158,6 +209,10 @@ class AnalysisJob:
                 "error": self.error,
                 "report_path": self.report_path,
                 "judgments": self.judgments,
+                "submitted": self.submitted,
+                "trace_path": self.trace_path,
+                "telemetry_error": self.telemetry_error,
+                "telemetry": self.trace.snapshot() if self.trace is not None else None,
             }
 
     def _log(self, text: str) -> None:
@@ -165,21 +220,27 @@ class AnalysisJob:
             self.buffer.add_message("System", text)
 
     def _run(self) -> None:
+        with use_trace(self.trace):
+            self._run_traced()
+
+    def _run_traced(self) -> None:
         # Imported here so a missing provider SDK surfaces as this run's error.
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
-
         graph = None
-        _current_job.set(self)
+        job_token = _current_job.set(self)
+        cancel_token = None
         try:
-            from tradingagents.llm_clients.openai_client import cancel_event
+            with self.trace.scope("setup", "graph_setup"):
+                from tradingagents.graph.trading_graph import TradingAgentsGraph
+                from tradingagents.llm_clients.openai_client import cancel_event
 
-            cancel_event.set(self._cancel)  # a stop also cuts short a provider retry wait
-            self._log(f"Analyzing {self.ticker} on {self.trade_date} with: {', '.join(self.analysts)}")
-            if self.portfolio is not None:  # the block the decision agents read
-                self._log(self.portfolio.render(self.ticker))
-            graph = TradingAgentsGraph(
-                self.analysts, config=self.config, debug=False, callbacks=[self.stats]
-            )
+                cancel_token = cancel_event.set(self._cancel)
+
+                self._log(f"Analyzing {self.ticker} on {self.trade_date} with: {', '.join(self.analysts)}")
+                if self.portfolio is not None:  # the block the decision agents read
+                    self._log(self.portfolio.render(self.ticker))
+                graph = TradingAgentsGraph(
+                    self.analysts, config=self.config, debug=False, callbacks=[self.stats]
+                )
             plan = build_analyst_execution_plan(self.analysts)
             tracker = AnalystWallTimeTracker(plan)
             # The analysts start together.
@@ -189,38 +250,46 @@ class AnalysisJob:
             for spec in plan.specs:
                 tracker.mark_started(spec.key)
 
-            init_state = graph.create_run_state(
-                self.ticker, self.trade_date, self.asset_type, self.portfolio
-            )
-            args = graph.propagator.get_graph_args(callbacks=[self.stats])
-            tid = graph.begin_checkpoint(self.ticker, self.trade_date, self.asset_type, self.portfolio)
-            if tid is not None:
-                args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
-                if getattr(graph, "_resuming", False):
-                    self._log("Resuming the saved checkpoint for this ticker and date")
+            with self.trace.scope("setup", "run_state_and_checkpoint"):
+                init_state = graph.create_run_state(
+                    self.ticker, self.trade_date, self.asset_type, self.portfolio
+                )
+                args = graph.propagator.get_graph_args(callbacks=[self.stats])
+                tid = graph.begin_checkpoint(self.ticker, self.trade_date, self.asset_type, self.portfolio)
+                if tid is not None:
+                    args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
+                    if getattr(graph, "_resuming", False):
+                        self._log("Resuming the saved checkpoint for this ticker and date")
 
             final_state: dict = {}
             try:
-                for messages, chunk in graph.stream_run(graph.checkpoint_input(init_state), **args):
+                with self.trace.scope("graph", "research_graph"):
+                    for messages, chunk in graph.stream_run(graph.checkpoint_input(init_state), **args):
+                        if self._cancel.is_set():
+                            raise _Cancelled
+                        with self.lock:
+                            process_chunk(self.buffer, chunk, wall_time_tracker=tracker, messages=messages)
+                            if chunk and chunk.get("sentiment_judgments"):
+                                self.judgments = chunk["sentiment_judgments"]
+                        # Reports are available on the backend; their arrival
+                        # does not acknowledge a sourced result rendered by a browser.
+                        if chunk:
+                            if any(chunk.get(spec.report_key) for spec in plan.specs):
+                                self.trace.milestone("generated_report")
+                            final_state.update(chunk)
                     if self._cancel.is_set():
                         raise _Cancelled
-                    with self.lock:
-                        process_chunk(self.buffer, chunk, wall_time_tracker=tracker, messages=messages)
-                        if chunk and chunk.get("sentiment_judgments"):
-                            self.judgments = chunk["sentiment_judgments"]
-                    # A step inside an analyst's graph carries messages only, or
-                    # its report; merge what each step has into the full state.
-                    if chunk:
-                        final_state.update(chunk)
-                graph.record_decision(self.ticker, self.trade_date, final_state)
-                graph.clear_checkpoint_on_success(
-                    self.ticker, self.trade_date, self.asset_type, self.portfolio
-                )
+                with self.trace.scope("persistence", "decision_and_checkpoint"):
+                    graph.record_decision(self.ticker, self.trade_date, final_state)
+                    graph.clear_checkpoint_on_success(
+                        self.ticker, self.trade_date, self.asset_type, self.portfolio
+                    )
             finally:
                 graph.end_checkpoint()
 
             rating = run_rating(final_state)
             report_path = graph.save_reports(final_state, self.ticker)
+            self.trace.milestone("persisted_report")
 
             with self.lock:
                 for agent in self.buffer.agent_status:
@@ -239,10 +308,12 @@ class AnalysisJob:
                 self.report_path = report_path
                 self.status = DONE
         except _Cancelled:
+            self.trace.event("cancelled")
             with self.lock:
                 self.buffer.add_message("System", "Stopped by user")
                 self.status = CANCELLED
         except Exception as exc:
+            self.trace.event("run_error", {"error_type": type(exc).__name__})
             if self._cancel.is_set():  # stopped, whatever the step it interrupted raised
                 with self.lock:
                     self.buffer.add_message("System", f"Stopped by user ({type(exc).__name__} as it stopped)")
@@ -255,6 +326,10 @@ class AnalysisJob:
                 self.status = FAILED
         finally:
             self.finished = time.time()
+            if cancel_token is not None:
+                cancel_event.reset(cancel_token)
+            _current_job.reset(job_token)
+            self._finish_trace()
 
 
 @dataclass
@@ -398,6 +473,7 @@ class AnalysisQueue:
                                 f"{room} more can be added now.")
             for job in jobs:
                 job.status = PENDING
+                job.mark_submitted()
                 self.registry.add(job)
                 self._waiting.append(job)
                 self._order.append(job.id)

@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,7 @@ from tradingagents.llm_clients import create_tier_client, tier_provider
 from tradingagents.memory import TradingMemoryLog, settlement
 from tradingagents.memory.reflection import Reflector
 from tradingagents.reporting import write_report_tree
+from tradingagents.telemetry import current_trace
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -283,7 +284,12 @@ class TradingAgentsGraph:
         """
         if save_path is None:
             save_path = self.default_report_path(ticker)
-        return write_report_tree(final_state, ticker, save_path, settings=self.run_settings(), html=html)
+        trace = current_trace()
+        with trace.scope("persistence", "report_tree") if trace else nullcontext():
+            path = write_report_tree(final_state, ticker, save_path, settings=self.run_settings(), html=html)
+        if trace:
+            trace.milestone("persisted_report")
+        return path
 
     def default_report_path(self, ticker) -> Path:
         """Where a run's reports go unless told otherwise: under results_dir, stamped now."""
@@ -358,22 +364,25 @@ class TradingAgentsGraph:
     def record_decision(self, company_name, trade_date, final_state):
         """Record a finished run: its state log, and its decision in the memory log
         for reflection on the next same-ticker run. propagate() and the CLI both end here."""
-        self._log_state(trade_date, final_state)
+        trace = current_trace()
+        with trace.scope("persistence", "state_log") if trace else nullcontext():
+            self._log_state(trade_date, final_state)
         decision = final_state.get("final_trade_decision")
         if not decision:
             logger.warning("No final decision for %s on %s; nothing added to the memory log",
                            company_name, trade_date)
             return
-        self.memory_log.store_decision(
-            ticker=company_name, trade_date=trade_date, final_trade_decision=decision,
-            rating=run_rating(final_state),
-        )
+        with trace.scope("persistence", "decision_memory") if trace else nullcontext():
+            self.memory_log.store_decision(
+                ticker=company_name, trade_date=trade_date, final_trade_decision=decision,
+                rating=run_rating(final_state),
+            )
 
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock",
                    checkpoint_thread_id: str | None = None, portfolio=None):
         """Execute the graph and write the resulting state to disk and memory log."""
         init_agent_state = self.create_run_state(company_name, trade_date, asset_type, portfolio)
-        args = self.propagator.get_graph_args()
+        args = self.propagator.get_graph_args(callbacks=getattr(self, "callbacks", None))
 
         # Inject the checkpoint thread_id (from checkpoint_scope) so the same
         # ticker+date+graph-shape resumes; a different one starts fresh (#1089).

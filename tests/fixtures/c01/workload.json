@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "license": "CC0-1.0",
+  "provenance": "Original synthetic benchmark data; no downloaded vendor data or real model output.",
+  "workload": {
+    "symbol": "NVDA",
+    "trade_date": "2026-01-09",
+    "asset_type": "stock",
+    "analysts": ["market", "social", "news", "fundamentals"]
+  },
+  "configuration": {
+    "llm_provider": "openai",
+    "quick_think_llm": "c01-scripted",
+    "deep_think_llm": "c01-scripted",
+    "checkpoint_enabled": false,
+    "jev_enabled": false,
+    "jev_claim_check": false,
+    "max_debate_rounds": 1,
+    "max_risk_discuss_rounds": 1,
+    "max_tool_rounds": 2,
+    "max_recur_limit": 100,
+    "temperature": 0.0,
+    "llm_max_retries": 0,
+    "output_language": "English",
+    "data_vendors": {
+      "core_stock_apis": "yfinance",
+      "technical_indicators": "yfinance",
+      "fundamental_data": "sec_edgar,yfinance",
+      "news_data": "yfinance",
+      "macro_data": "fred",
+      "prediction_markets": "polymarket"
+    },
+    "tool_vendors": {}
+  },
+  "model_answer": "Synthetic fixture report: closing price 100.50 USD [fixture:ohlcv]. This is invented benchmark evidence.\n\n**Rating**: Overweight\n\nFINAL TRANSACTION PROPOSAL: **BUY**",
+  "source_answer": "Synthetic fixture {method}: value=100.50; date=2026-01-09; source=fixture:{method}. No live market data.",
+  "social_answer": "No synthetic social posts available.",
+  "ohlcv": {"business_days": 60, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000000},
+  "latencies_ms": {"model": 5, "source": 10, "slow_source": 40, "retry_backoff": 10, "queue": 5},
+  "controls": {"duplicate_requests": 3, "rate_limit_attempts": 2, "cancel_after_sources": 1}
+}
