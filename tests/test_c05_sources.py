@@ -28,6 +28,7 @@ from tradingagents.agents import claim_check as cc
 from tradingagents.agents.analysts import sentiment_analyst
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.dataflows import provenance, router
+from tradingagents.dataflows.config import run_config
 from tradingagents.dataflows.errors import VendorUnavailableError
 from tradingagents.dataflows.feed import Feed, FeedItem
 from tradingagents.graph.analyst_execution import ANALYST_NODE_SPECS
@@ -333,6 +334,34 @@ def test_a_partial_report_keeps_the_sources_its_finished_stages_read(tmp_path, m
 
     saved = json.loads((folder / "evidence.json").read_text(encoding="utf-8"))
     assert len(saved["entries"]) == 15
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("offline")
+def test_saved_reports_name_the_runs_own_store_whatever_config_is_current(tmp_path, monkeypatch):
+    """The texts went where the run's config said; another config current at save time must not move them."""
+    graph, state = _run(tmp_path, monkeypatch)
+
+    with run_config({"results_dir": str(tmp_path / "other")}):
+        graph.save_reports(state, "NVDA", save_path=tmp_path / "saved")
+
+    saved = json.loads((tmp_path / "saved" / "evidence.json").read_text(encoding="utf-8"))
+    assert (tmp_path / "saved" / saved["store"]).resolve() == _store(tmp_path).resolve()
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("offline")
+def test_a_writer_given_the_runs_store_records_it(tmp_path, monkeypatch):
+    _, state = _run(tmp_path, monkeypatch)
+
+    with run_config({"results_dir": str(tmp_path / "other")}):
+        write_report_tree(state, "NVDA", tmp_path / "explicit", evidence_store=_store(tmp_path))
+        write_partial_report(state, "NVDA", tmp_path / "partial", {"state": "partial", "stop_reason": "cancelled"},
+                             evidence_store=_store(tmp_path))
+
+    for folder in (tmp_path / "explicit", tmp_path / "partial"):
+        saved = json.loads((folder / "evidence.json").read_text(encoding="utf-8"))
+        assert (folder / saved["store"]).resolve() == _store(tmp_path).resolve()
 
 
 @pytest.mark.unit

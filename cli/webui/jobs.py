@@ -35,6 +35,7 @@ from tradingagents.completion import (
     run_completion,
     stop_reason_for,
 )
+from tradingagents.dataflows.provenance import store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.analyst_execution import build_analyst_execution_plan
 from tradingagents.memory import TradingMemoryLog
@@ -398,7 +399,7 @@ class AnalysisJob:
                     partial = write_partial_report(
                         final_state, self.ticker,
                         report_dir(self.config.get("results_dir", "results"), self.ticker, "_partial"),
-                        completion, settings=settings)
+                        completion, settings=settings, evidence_store=store_dir(self.config))
                 self.trace.milestone("persisted_partial_report")
             except Exception as save_exc:  # the run's status stands even if its partial report cannot be written
                 log.warning("Partial report for analysis %s could not be saved (%s)",
