@@ -38,7 +38,7 @@ from tradingagents.completion import (
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.analyst_execution import build_analyst_execution_plan
 from tradingagents.memory import TradingMemoryLog
-from tradingagents.reporting import report_dir, write_partial_report
+from tradingagents.reporting import report_dir, strip_sources_appendix, write_partial_report
 from tradingagents.run_control import (
     DeadlineExceeded,
     RunBudget,
@@ -703,12 +703,11 @@ def _report_header(path: Path) -> tuple[str, str | None]:
 def load_report_sections(report: SavedReport) -> list[tuple[str, str]]:
     """(title, markdown) sections of a saved report, in pipeline order."""
     if report.kind in ("report", "partial"):
-        text = report.path.read_text(encoding="utf-8")
+        # The Sources appendix after section V (docs/adr/0003) is not part of it.
+        # Only its exact opening is cut: an analyst's own text may hold "## " headings.
+        text = strip_sources_appendix(report.path.read_text(encoding="utf-8"))
         heads = list(_SECTION_RE.finditer(text))
-        # A section ends at the next level-2 heading of any kind, so the Sources
-        # appendix after section V (docs/adr/0003) is never read as part of it.
-        starts = [m.start() for m in re.finditer(r"^## ", text, re.MULTILINE)]
-        ends = [min((s for s in starts if s > h.start()), default=len(text)) for h in heads]
+        ends = [h.start() for h in heads[1:]] + [len(text)]
         return [(h.group(1).strip(), text[h.end():end].strip())
                 for h, end in zip(heads, ends, strict=True)]
     state = json.loads(report.path.read_text(encoding="utf-8"))

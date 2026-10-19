@@ -107,12 +107,20 @@ def _answered(entry: dict) -> list[dict]:
     return [a for a in entry.get("acquisitions") or () if a.get("outcome") == "ok"]
 
 
+_SOURCES_OPENING = ("## Sources\n\nWhat each analyst read for this report, in the order it read them. "
+                    "The texts stay with the saved report on this computer; this list only names them.")
+
+
+def strip_sources_appendix(text: str) -> str:
+    """A saved report without its Sources appendix, found by its exact opening at the end."""
+    cut = text.rfind("\n" + _SOURCES_OPENING)
+    return text if cut < 0 else text[:cut]
+
+
 def sources_markdown(entries: list[dict]) -> str:
     """The report's Sources appendix: what each analyst read, never the texts (docs/adr/0003)."""
     lines = [
-        "## Sources", "",
-        "What each analyst read for this report, in the order it read them. The texts "
-        "stay with the saved report on this computer; this list only names them.", "",
+        _SOURCES_OPENING, "",
         "| ID | Analyst | Tool | Source | Window | As of | Fetched (UTC) | Coverage |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]

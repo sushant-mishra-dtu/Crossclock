@@ -568,4 +568,6 @@ def test_the_judgments_leave_the_analysts_own_graph_with_its_report(recorded_che
 
     out = _analyst_graph(ANALYST_NODE_SPECS["social"], analyst, 3).invoke({"messages": []})
     assert out == {"sentiment_report": "report", "sentiment_judgments": {"band": "Mixed"},
-                   "run_checks": recorded_checks}
+                   "run_checks": recorded_checks,
+                   # What it read (docs/adr/0003): this stub reads nothing.
+                   "evidence": {}}

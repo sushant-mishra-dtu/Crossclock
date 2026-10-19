@@ -309,6 +309,21 @@ def test_downloads_list_the_sources_without_their_texts(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("offline")
+def test_an_analysts_own_level_two_heading_stays_in_its_section(tmp_path, monkeypatch):
+    state = _saved_state(tmp_path, monkeypatch)
+    state["market_report"] = "## Trend\nAbove the 50-day average.\n\n## Sources\nMy own notes."
+    folder = tmp_path / "results" / "reports" / "NVDA_20260109_120000"
+
+    path = write_report_tree(state, "NVDA", folder)
+
+    sections = dict(load_report_sections(SavedReport(path, "NVDA", TRADE_DATE, datetime.now(), "report")))
+    assert "## Trend" in sections["I. Analyst Team Reports"]
+    assert "## Sources\nMy own notes." in sections["I. Analyst Team Reports"]
+    assert "| E1 |" not in sections["V. Portfolio Manager Decision"]
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("offline")
 def test_a_partial_report_keeps_the_sources_its_finished_stages_read(tmp_path, monkeypatch):
     state = _saved_state(tmp_path, monkeypatch)
     folder = tmp_path / "results" / "reports" / "NVDA_20260109_120000_partial"
