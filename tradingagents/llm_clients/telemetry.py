@@ -1,8 +1,11 @@
-"""Observe existing SDK HTTPX clients without changing their transport policy.
+"""Observe existing SDK HTTPX clients, and hold their requests to the run's budget.
 
 The SDK client handles are inspected defensively, while the hooks themselves
 use HTTPX's public event-hooks interface. No request content, URL, headers, or
 exception text is retained. One hook per client serves concurrent run contexts.
+Outside a run (no ``RunControl`` in the context) the transport policy is left
+as the SDK set it; inside one, a request is refused after Stop or the deadline
+and its timeout is cut to the attempt timeout and the time left (docs/adr/0001).
 """
 
 import threading
@@ -12,6 +15,7 @@ from functools import wraps
 
 import httpx
 
+from tradingagents.run_control import RunInterrupted, current_control
 from tradingagents.telemetry import current_trace
 
 _pending_attempts: ContextVar[list | None] = ContextVar("telemetry_http_attempts", default=None)
@@ -29,15 +33,50 @@ def _client_types():
     return (httpx.Client, httpx2.Client), (httpx.AsyncClient, httpx2.AsyncClient)
 
 
-def _request_hook(request):
-    trace = current_trace()
-    if trace is None:
-        return
+_TIMEOUT_KEYS = ("connect", "read", "write", "pool")
+
+
+def _clamp_timeout(request, seconds: float) -> None:
+    """Cut every phase of this request's timeout to ``seconds``.
+
+    The transport reads the timeout from the request after the hooks run, so
+    this reaches SDK-internal retries too. HTTPX read timeouts bound the gap
+    between bytes, not the whole response; a run's deadline check after the
+    attempt catches a server that trickles bytes past it.
+    """
+    current = request.extensions.get("timeout") or {}
+    request.extensions["timeout"] = {
+        key: seconds if current.get(key) is None else min(current[key], seconds)
+        for key in _TIMEOUT_KEYS
+    }
+
+
+def _attempt_attributes(trace, request):
     transport = "httpx2" if type(request).__module__.startswith("httpx2.") else "httpx"
     parent = trace.current_span_attributes
-    attributes = {"transport": transport,
-                  **{key: parent[key] for key in ("provider", "model") if key in parent},
-                  **(_call_metadata.get() or {})}
+    return {"transport": transport,
+            **{key: parent[key] for key in ("provider", "model") if key in parent},
+            **(_call_metadata.get() or {})}
+
+
+def _request_hook(request):
+    trace = current_trace()
+    # The run's guard: nothing is sent after Stop or the deadline, by any layer
+    # (an SDK's own retry included), and no attempt may outlast the time left.
+    control = current_control()
+    if control is not None:
+        try:
+            control.check()
+        except RunInterrupted as stop:
+            if trace is not None:
+                span = trace.start_span("transport_attempt", "httpx.send", _attempt_attributes(trace, request))
+                trace.end_span(span, status="not_sent", attributes={
+                    "outcome": "run_interrupted", "reason": stop.reason, "coverage": "not_sent"})
+            raise
+        _clamp_timeout(request, control.attempt_timeout())
+    if trace is None:
+        return
+    attributes = _attempt_attributes(trace, request)
     # This SDK-defined counter describes actual SDK retries, rather than an
     # estimate based on a logical LangChain call. Do not retain other headers.
     retry_count = request.headers.get("x-stainless-retry-count") or request.headers.get("x-typesafe-retry-count")
@@ -132,6 +171,20 @@ def observe_sdk_transport(llm, provider: str, *, sdk: str = "openai"):
 
 @contextmanager
 def transport_call(llm):
+    # Checked before every generation, so providers whose HTTP is not hooked
+    # (Google, Bedrock) also make no new call after Stop or the deadline.
+    control = current_control()
+    if control is None:
+        with _observed_transport_call(llm):
+            yield
+        return
+    control.check()
+    with control.request(), _observed_transport_call(llm):
+        yield
+
+
+@contextmanager
+def _observed_transport_call(llm):
     trace = current_trace()
     if trace is None:
         yield

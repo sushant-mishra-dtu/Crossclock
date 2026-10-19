@@ -51,6 +51,7 @@ from cli.webui.jobs import (
 )
 from cli.webui.ticker_search import search_tickers
 from tradingagents.backtest import iter_grid
+from tradingagents.completion import describe_gaps, describe_stop, is_complete
 from tradingagents.dataflows.errors import NoMarketDataError, VendorError, VendorUnavailableError
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV, get_api_key_env
@@ -284,6 +285,9 @@ def analysis_detail(job: AnalysisJob) -> dict:
                      for k, v in snap["sections"].items()],
         "activity": activity[:200],
         "reportDir": str(Path(report_path).parent) if report_path else None,
+        "partialReportDir": str(Path(snap["partial_report_path"]).parent) if snap["partial_report_path"] else None,
+        "completion": _completion_view(snap["completion"]),
+        "run": _run_view(snap["control"]),
         "judgments": snap["judgments"],
         "telemetry": {
             "runId": trace["run_id"],
@@ -292,6 +296,40 @@ def analysis_detail(job: AnalysisJob) -> dict:
             "cost": trace["cost"],
             "persistenceError": snap.get("telemetry_error"),
         } if trace else None,
+    }
+
+
+def _completion_view(completion: dict | None) -> dict | None:
+    """What a run finished and why it stopped, worded for the page (docs/adr/0001)."""
+    if not completion:
+        return None
+    complete = is_complete(completion)
+    return {
+        "state": completion["state"],
+        "stopReason": completion["stop_reason"],
+        "summary": None if complete else describe_stop(completion),
+        "gaps": describe_gaps(completion),
+        "missing": completion.get("missing") or [],
+        "stages": completion.get("stages") or {},
+        "checks": completion.get("checks") or {},
+        "providerFailure": completion.get("provider_failure"),
+    }
+
+
+def _run_view(control: dict | None) -> dict | None:
+    """An active run's time left, the retry it is waiting out and its requests in flight."""
+    if not control:
+        return None
+    retry = control.get("retry")
+    return {
+        "mode": control["mode"],
+        "deadlineSeconds": control["deadline_seconds"],
+        "remainingSeconds": control["remaining_seconds"],
+        "attemptTimeoutSeconds": control["attempt_timeout_seconds"],
+        "inFlight": control["in_flight"],
+        "stopping": control["stopping"],
+        "retry": {k: retry.get(k) for k in ("provider", "model", "error_class", "attempts",
+                                            "delay_seconds", "remaining_seconds")} if retry else None,
     }
 
 
@@ -737,7 +775,8 @@ def reports_list() -> list[dict]:
     out = []
     for r in list_saved_reports(DEFAULT_CONFIG["results_dir"]):
         try:
-            rating = report_rating(load_report_sections(r))
+            # A partial report has no rating: it is not a decision.
+            rating = None if r.kind == "partial" else report_rating(load_report_sections(r))
         except (OSError, ValueError):
             rating = None
         out.append({"id": _report_id(r), "ticker": r.ticker, "date": r.trade_date,
@@ -751,7 +790,7 @@ def report_detail(report_id: str) -> dict:
     sections = load_report_sections(report)
     return {"id": report_id, "ticker": report.ticker, "date": report.trade_date,
             "modified": report.modified.strftime("%Y-%m-%d %H:%M"), "kind": report.kind,
-            "path": str(report.path), "rating": report_rating(sections),
+            "path": str(report.path), "rating": None if report.kind == "partial" else report_rating(sections),
             "sections": [{"title": t, "body": b} for t, b in sections],
             "hasJudgments": report.judgments_path is not None}
 
@@ -928,10 +967,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(analysis_detail(self._analysis(job_id)))
             case ["analyses", job_id, "report.md"]:
                 job = self._analysis(job_id)
-                if job.report_path is None or not Path(job.report_path).exists():
-                    raise ApiError("This run has no saved report yet.", HTTPStatus.NOT_FOUND)
-                return self._download(Path(job.report_path),
-                                      f"{job.ticker}_{job.trade_date}.md")
+                if job.report_path is not None and Path(job.report_path).exists():
+                    return self._download(Path(job.report_path), f"{job.ticker}_{job.trade_date}.md")
+                # A stopped or failed run's partial report, named as one.
+                if job.partial_report_path is not None and Path(job.partial_report_path).exists():
+                    return self._download(Path(job.partial_report_path),
+                                          f"{job.ticker}_{job.trade_date}_partial.md")
+                raise ApiError("This run has no saved report yet.", HTTPStatus.NOT_FOUND)
             case ["reports"]:
                 return self._send_json(reports_list())
             case ["report"]:

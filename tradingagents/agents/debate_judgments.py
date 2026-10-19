@@ -27,7 +27,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 
-from tradingagents.agents.jev import MAX_STATE_CHARS, jev_client
+from tradingagents.agents.jev import MAX_STATE_CHARS, jev_absence, jev_client
+from tradingagents.run_control import CHECK_FAILED, CHECK_RAN, record_check
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,7 @@ def new_argument(prior_turns: str, latest_turn: str) -> float | None:
     """
     client = jev_client()
     if client is None:
+        record_check("debate_judgments", jev_absence())
         return None
     prior_turns = latest_turns(prior_turns, MAX_STATE_CHARS - len(latest_turn))
     try:
@@ -186,10 +188,13 @@ def new_argument(prior_turns: str, latest_turn: str) -> float | None:
                 state={"prior_turns": prior_turns, "latest_turn": latest_turn},
                 questions=_questions()["turn"],
             )
-        return response.answers["new_argument"].noul
+        score = response.answers["new_argument"].noul
     except Exception as exc:  # noqa: BLE001 — hold the configured rounds instead
         logger.warning("Debate convergence check failed (%s); holding the configured rounds", exc)
+        record_check("debate_judgments", CHECK_FAILED)
         return None
+    record_check("debate_judgments", CHECK_RAN)
+    return score
 
 
 def stronger_side(bull_case: str, bear_case: str) -> dict[str, float] | None:
@@ -203,6 +208,7 @@ def stronger_side(bull_case: str, bear_case: str) -> dict[str, float] | None:
         return None
     client = jev_client()
     if client is None:
+        record_check("debate_judgments", jev_absence())
         return None
     try:
         with client:
@@ -214,10 +220,13 @@ def stronger_side(bull_case: str, bear_case: str) -> dict[str, float] | None:
                 questions=_questions()["sides"],
             )
         answer = response.answers["stronger_side"]
-        return {side: float(answer.probabilities.get(side, 0.0)) for side in SIDES}
+        sides = {side: float(answer.probabilities.get(side, 0.0)) for side in SIDES}
     except Exception as exc:  # noqa: BLE001 — the manager decides without a hint
         logger.warning("Debate side check failed (%s); the Research Manager gets no hint", exc)
+        record_check("debate_judgments", CHECK_FAILED)
         return None
+    record_check("debate_judgments", CHECK_RAN)
+    return sides
 
 
 def render_side_hint(probabilities: Mapping[str, float], policy: DebatePolicy = DEFAULT_POLICY) -> str:

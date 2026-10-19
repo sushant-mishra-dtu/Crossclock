@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 
 from tradingagents.agents.rating import run_rating
+from tradingagents.completion import is_complete, status_line
+from tradingagents.dataflows.symbols import safe_ticker_component
 
 
 def analyst_names(keys) -> list[str]:
@@ -18,12 +20,16 @@ def analyst_names(keys) -> list[str]:
     return ["sentiment" if key == "social" else key for key in keys or []]
 
 
-def _header(ticker: str, final_state: dict, settings: dict | None) -> str:
+def _header(ticker: str, final_state: dict, settings: dict | None, completion: dict | None = None) -> str:
     """The report's title and what produced it: analysis date, version, models, analysts, vendors."""
-    lines = [f"# Trading Analysis Report: {ticker}", ""]
+    partial = completion is not None and not is_complete(completion)
+    title = "Partial Research Report (incomplete)" if partial else "Trading Analysis Report"
+    lines = [f"# {title}: {ticker}", ""]
+    if completion is not None:
+        lines.append(f"- Run status: {status_line(completion)}")
     if final_state.get("trade_date"):
         lines.append(f"- Analysis date: {final_state['trade_date']}")
-    if final_state.get("final_trade_decision"):
+    if final_state.get("final_trade_decision") and not partial:
         lines.append(f"- Rating: {run_rating(final_state)}")
     lines.append(f"- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     if settings:
@@ -90,14 +96,14 @@ def _report_parts(final_state: dict) -> list[tuple[str, str, list[tuple[str, str
     return parts
 
 
-def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict | None = None,
-                      html: bool = True) -> Path:
-    """Save a completed run's reports to ``save_path``; return the complete-report path.
+def report_dir(results_dir, ticker: str, suffix: str = "") -> Path:
+    """Where a run's report tree goes under ``results_dir``, stamped now."""
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path(results_dir) / "reports" / f"{safe_ticker_component(ticker)}_{stamp}{suffix}"
 
-    ``settings`` (``TradingAgentsGraph.run_settings()``) adds what produced the run
-    to the report's header. ``html`` also writes ``complete_report.html``, one
-    self-contained page of the same report (#1419).
-    """
+
+def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool, completion,
+                name: str) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     parts = _report_parts(final_state)
@@ -114,13 +120,42 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
         (save_path / "1_analysts" / "sentiment_judgments.json").write_text(
             json.dumps(final_state["sentiment_judgments"], indent=2), encoding="utf-8")
 
-    (save_path / "complete_report.md").write_text(
-        _header(ticker, final_state, settings) + "\n\n".join(sections), encoding="utf-8"
+    if completion is not None:
+        (save_path / "run_status.json").write_text(json.dumps(completion, indent=2), encoding="utf-8")
+    (save_path / f"{name}.md").write_text(
+        _header(ticker, final_state, settings, completion) + "\n\n".join(sections), encoding="utf-8"
     )
     if html:
         from tradingagents.report_html import render_report
 
-        (save_path / "complete_report.html").write_text(
-            render_report(ticker, final_state, settings, parts), encoding="utf-8"
+        (save_path / f"{name}.html").write_text(
+            render_report(ticker, final_state, settings, parts, completion=completion), encoding="utf-8"
         )
-    return save_path / "complete_report.md"
+    return save_path / f"{name}.md"
+
+
+def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict | None = None,
+                      html: bool = True, completion: dict | None = None) -> Path:
+    """Save a completed run's reports to ``save_path``; return the complete-report path.
+
+    ``settings`` (``TradingAgentsGraph.run_settings()``) adds what produced the run
+    to the report's header. ``html`` also writes ``complete_report.html``, one
+    self-contained page of the same report (#1419). ``completion`` (see
+    ``tradingagents.completion``) adds the run's status line, naming any check
+    that did not run, and is saved beside the report as ``run_status.json``.
+    """
+    if completion is not None and not is_complete(completion):
+        raise ValueError("an incomplete run is saved with write_partial_report, not as a complete report")
+    return _write_tree(final_state, ticker, save_path, settings, html, completion, "complete_report")
+
+
+def write_partial_report(final_state: dict, ticker: str, save_path, completion: dict,
+                         settings: dict | None = None, html: bool = True) -> Path:
+    """Save what an interrupted run finished; return the partial-report path.
+
+    It is ``partial_report.md`` (and ``.html``), never ``complete_report.md``,
+    and opens with why the run stopped and that it has no rating, so nothing
+    that reads saved reports (the history page, the 129BOB importer) can take
+    it for finished research. ``run_status.json`` holds the completion record.
+    """
+    return _write_tree(final_state, ticker, save_path, settings, html, completion, "partial_report")

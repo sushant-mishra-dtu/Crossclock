@@ -32,7 +32,8 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
         key="social",
         agent_node="Sentiment Analyst",
         report_key="sentiment_report",
-        extra_outputs=("sentiment_judgments",),  # with Jev (sentiment_judgments.py)
+        # With Jev (sentiment_judgments.py); run_checks says whether its judgments ran.
+        extra_outputs=("sentiment_judgments", "run_checks"),
     ),
     "news": AnalystNodeSpec(
         key="news",

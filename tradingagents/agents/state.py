@@ -3,6 +3,8 @@ from typing import Annotated
 from langgraph.graph import MessagesState
 from typing_extensions import TypedDict
 
+from tradingagents.run_control import merge_checks
+
 
 # Researcher team state
 class InvestDebateState(TypedDict):
@@ -82,4 +84,8 @@ class AgentState(MessagesState):
     final_rating: Annotated[str, "The Portfolio Manager's 5-tier rating, or REVIEW when it has none"]
     past_context: Annotated[str, "Memory log context for the Portfolio Manager (same-ticker decisions + cross-ticker lessons), written by the Memory Log step"]
     memory_note: Annotated[str, "What the Memory Log step could not settle or read this run, for the report; empty when all went well"]
+    # How each optional check went (claim check, Jev judgments): ran, failed,
+    # disabled, unavailable or skipped. Kept in the state so a resumed run still
+    # knows what the stages it reuses checked.
+    run_checks: Annotated[dict, merge_checks]
     portfolio_context: Annotated[str, "Caller-supplied holdings and cash, rendered at run start; empty when not provided"]

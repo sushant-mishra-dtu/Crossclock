@@ -35,7 +35,7 @@ from tradingagents.agents.context import (
     get_language_instruction,
     resolve_instrument_identity,
 )
-from tradingagents.agents.jev import jev_client
+from tradingagents.agents.jev import jev_absence, jev_client
 from tradingagents.agents.post_screen import jev_screen
 from tradingagents.agents.schemas import (
     SentimentNarrative,
@@ -62,6 +62,7 @@ from tradingagents.dataflows.vendors.stocktwits import (
     fetch_stocktwits_feed,
     fetch_stocktwits_messages,
 )
+from tradingagents.run_control import CHECK_FAILED, CHECK_RAN, record_check
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ def create_sentiment_analyst(llm):
 
         client = jev_client()
         if client is None:
+            record_check("sentiment_judgments", jev_absence())
             # Pre-fetch all three sources. Each fetcher degrades gracefully and
             # returns a string (no exceptions surface from here), so the LLM
             # always sees something — either real data or a clear placeholder.
@@ -144,6 +146,7 @@ def create_sentiment_analyst(llm):
             with client:
                 feeds = _fetch_feeds(ticker, start_date, end_date, subreddits)
                 judged = _judge(client, feeds, ticker)
+            record_check("sentiment_judgments", CHECK_FAILED if judged is None else CHECK_RAN)
             if judged is not None:
                 report_text, payload = _judged_report(
                     feeds, judged, ticker, start_date, end_date, subreddits,

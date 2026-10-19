@@ -149,6 +149,29 @@ def build_default_config() -> dict:
         # unbounded reasoning/output and hangs or trips a gateway idle timeout
         # (e.g. some deepseek-v4-flash deployments, #1204).
         "max_tokens": None,
+        # How long a run may take (docs/adr/0001). Each research mode has a budget;
+        # only Standard exists until Quick and Deep are built. The deadline runs from
+        # research start to the saved report (queue time is not counted); every HTTP
+        # attempt to a model is cut to the attempt timeout and to the time left.
+        # OpenAI-compatible providers retry transient errors on the backoff schedule
+        # (llm_max_retries, when set, caps how many), honouring a server's Retry-After
+        # up to max_retry_after_seconds; a retry that would leave less than
+        # min_attempt_seconds before the deadline is not made. A deadline of None
+        # turns it off; the attempt timeout still applies.
+        "research_mode": "standard",
+        "run_budgets": {
+            "standard": {
+                "deadline_seconds": 1200,
+                "attempt_timeout_seconds": 180,
+                "retry_backoff_seconds": [10, 20, 40, 60, 60],
+                "max_retry_after_seconds": 120,
+                "min_attempt_seconds": 30,
+            },
+        },
+        # A run stopped, timed out or ended by a provider failure saves what it had
+        # finished as a partial report (never as a complete report, a state log or
+        # a decision); False keeps only the checkpoint.
+        "save_partial_reports": True,
         # TypeSafe Jev typed judgments (pip install "tradingagents[jev]"). Used only
         # when TYPESAFE_API_KEY is set; set False to keep the pre-Jev behaviour even
         # then. The Sentiment Analyst uses it to filter news and social items and to

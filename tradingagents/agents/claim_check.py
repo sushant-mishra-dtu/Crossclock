@@ -37,9 +37,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from tradingagents.agents.jev import ask_each, jev_client
+from tradingagents.agents.jev import ask_each, jev_absence, jev_client
 from tradingagents.agents.rating import extract_rating
 from tradingagents.dataflows.config import get_config
+from tradingagents.run_control import (
+    CHECK_DISABLED,
+    CHECK_FAILED,
+    CHECK_RAN,
+    CHECK_SKIPPED,
+    record_check,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -800,13 +807,18 @@ def check_claims(
     Unchanged when the check is switched off, no analyst report was written,
     Jev is unavailable, or any Jev request fails.
     """
+    # Each outcome is recorded, so a report can say its decision is unchecked
+    # rather than read like one whose claims were checked (docs/adr/0001).
     if not get_config().get("jev_claim_check", True):
+        record_check("claim_check", CHECK_DISABLED)
         return decision
     reports = analyst_reports(state)
     if not reports or not decision.strip():
+        record_check("claim_check", CHECK_SKIPPED)
         return decision
     client = jev_client()
     if client is None:
+        record_check("claim_check", jev_absence())
         return decision
     try:
         with client:
@@ -815,7 +827,9 @@ def check_claims(
         logger.warning(
             "Portfolio Manager: claim check failed (%s); keeping the decision unchecked", exc,
         )
+        record_check("claim_check", CHECK_FAILED)
         return decision
+    record_check("claim_check", CHECK_RAN)
     pm_rating = extract_rating(decision)
     logger.info(
         "Portfolio Manager: claim check read %d claims, %d checkable, review=%s",

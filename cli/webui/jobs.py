@@ -22,9 +22,30 @@ from cli.display import ANALYST_ORDER, AnalystWallTimeTracker, MessageBuffer, pr
 from cli.stats_handler import StatsCallbackHandler
 from tradingagents.agents.rating import is_review, parse_rating, run_rating
 from tradingagents.backtest import run_backtest, summarize
+from tradingagents.completion import (
+    PARTIAL,
+    STOP_CANCELLED,
+    STOP_ERROR,
+    STOP_MISSING,
+    IncompleteResearch,
+    describe_gaps,
+    describe_stop,
+    is_complete,
+    provider_failure_for,
+    run_completion,
+    stop_reason_for,
+)
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.analyst_execution import build_analyst_execution_plan
 from tradingagents.memory import TradingMemoryLog
+from tradingagents.reporting import report_dir, write_partial_report
+from tradingagents.run_control import (
+    DeadlineExceeded,
+    RunBudget,
+    RunControl,
+    RunInterrupted,
+    use_control,
+)
 from tradingagents.telemetry import RunTrace, use_trace
 
 PENDING, RUNNING, DONE, FAILED, CANCELLED = "pending", "running", "done", "failed", "cancelled"
@@ -51,10 +72,6 @@ SECTION_TITLES = {
 _SECTION_RE = re.compile(r"^## ((?:I|II|III|IV|V)\. .+)$", re.MULTILINE)
 
 
-class _Cancelled(Exception):
-    pass
-
-
 # The analysis whose graph is running in this context. LangGraph runs nodes on
 # pool threads but copies the context into them, so this reaches the LLM calls.
 _current_job: ContextVar[AnalysisJob | None] = ContextVar("webui_analysis_job", default=None)
@@ -74,6 +91,14 @@ class _JobLogHandler(logging.Handler):
 
 
 logging.getLogger("tradingagents.llm_clients").addHandler(_JobLogHandler(logging.WARNING))
+
+
+def _checkpoint_values(graph, args) -> dict:
+    """The state a resumed run's checkpoint holds, or {} when it cannot be read."""
+    try:
+        return dict(graph.graph.get_state(args.get("config", {})).values or {})
+    except Exception:  # a resume without readable state still runs; it only reports less
+        return {}
 # A failed run's traceback goes to the server's terminal; the API shows only the error itself.
 log = logging.getLogger(__name__)
 
@@ -100,17 +125,23 @@ class AnalysisJob:
     submitted: float = 0.0
     trace_path: Path | None = None
     telemetry_error: str | None = None
+    # What the run finished, checked and stopped on (tradingagents.completion).
+    completion: dict | None = None
+    partial_report_path: Path | None = None
 
     def __post_init__(self):
         self.analysts = [a for a in ANALYST_ORDER if a in set(self.analysts)]
         if not self.analysts:
             raise ValueError("Pick at least one analyst.")
+        # Fails here, at submission, on a misconfigured research budget.
+        RunBudget.from_config(self.config)
         self.buffer = MessageBuffer(max_length=500)
         self.buffer.init_for_analysis(self.analysts)
         self.stats = StatsCallbackHandler()
         self.lock = threading.Lock()
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
+        self.control: RunControl | None = None
         self.trace: RunTrace | None = None
         self._queue_span: str | None = None
         self._trace_finished = False
@@ -145,14 +176,20 @@ class AnalysisJob:
         self._queue_span = None
         self.trace.milestone("started")
         self.started = time.time()
+        # The deadline counts from here: queue time is measured, not charged.
+        self.control = RunControl.from_config(self.config, cancel_event=self._cancel)
+        budget = self.control.budget
+        self.trace.event("run_budget", {"mode": budget.mode, "deadline_seconds": budget.deadline_seconds,
+                                        "attempt_timeout_seconds": budget.attempt_timeout_seconds})
         self.status = RUNNING
         self._thread = threading.Thread(target=self._run, name=f"analysis-{self.id}", daemon=True)
         self._thread.start()
         return self
 
     def cancel(self) -> None:
-        """Stop after the current graph step, or at once if a provider retry is waiting;
-        a checkpointed run can resume later."""
+        """Stop: retry waits end and no model request starts from now on; a request
+        already in flight finishes or times out, and the run stops after it. What
+        it finished is kept as a partial report, and a checkpointed run can resume."""
         self._cancel.set()
 
     def wait(self, timeout: float | None = None) -> None:
@@ -165,6 +202,7 @@ class AnalysisJob:
         with self.lock:
             self.buffer.add_message("System", reason)
             self.status = CANCELLED
+            self.completion = run_completion({}, self.analysts, stop_reason=STOP_CANCELLED)
             self.finished = time.time()
         self._finish_trace()
 
@@ -213,6 +251,10 @@ class AnalysisJob:
                 "trace_path": self.trace_path,
                 "telemetry_error": self.telemetry_error,
                 "telemetry": self.trace.snapshot() if self.trace is not None else None,
+                "completion": self.completion,
+                "partial_report_path": self.partial_report_path,
+                # Time left, a retry being waited out and requests in flight, while it runs.
+                "control": self.control.snapshot() if self.control is not None and self.active else None,
             }
 
     def _log(self, text: str) -> None:
@@ -227,69 +269,82 @@ class AnalysisJob:
         # Imported here so a missing provider SDK surfaces as this run's error.
         graph = None
         job_token = _current_job.set(self)
-        cancel_token = None
+        # What the run has finished so far; kept as a partial report if it stops.
+        final_state: dict = {}
+        reused: set[str] = set()
         try:
-            with self.trace.scope("setup", "graph_setup"):
-                from tradingagents.graph.trading_graph import TradingAgentsGraph
-                from tradingagents.llm_clients.openai_client import cancel_event
+            # Every model call, retry wait and HTTP request of the run sees this
+            # control: Stop and the deadline reach them all (docs/adr/0001).
+            with use_control(self.control):
+                with self.trace.scope("setup", "graph_setup"):
+                    from tradingagents.graph.trading_graph import TradingAgentsGraph
 
-                cancel_token = cancel_event.set(self._cancel)
-
-                self._log(f"Analyzing {self.ticker} on {self.trade_date} with: {', '.join(self.analysts)}")
-                if self.portfolio is not None:  # the block the decision agents read
-                    self._log(self.portfolio.render(self.ticker))
-                graph = TradingAgentsGraph(
-                    self.analysts, config=self.config, debug=False, callbacks=[self.stats]
-                )
-            plan = build_analyst_execution_plan(self.analysts)
-            tracker = AnalystWallTimeTracker(plan)
-            # The analysts start together.
-            with self.lock:
+                    self._log(f"Analyzing {self.ticker} on {self.trade_date} with: {', '.join(self.analysts)}")
+                    if self.portfolio is not None:  # the block the decision agents read
+                        self._log(self.portfolio.render(self.ticker))
+                    graph = TradingAgentsGraph(
+                        self.analysts, config=self.config, debug=False, callbacks=[self.stats]
+                    )
+                plan = build_analyst_execution_plan(self.analysts)
+                tracker = AnalystWallTimeTracker(plan)
+                # The analysts start together.
+                with self.lock:
+                    for spec in plan.specs:
+                        self.buffer.update_agent_status(spec.agent_node, "in_progress")
                 for spec in plan.specs:
-                    self.buffer.update_agent_status(spec.agent_node, "in_progress")
-            for spec in plan.specs:
-                tracker.mark_started(spec.key)
+                    tracker.mark_started(spec.key)
 
-            with self.trace.scope("setup", "run_state_and_checkpoint"):
-                init_state = graph.create_run_state(
-                    self.ticker, self.trade_date, self.asset_type, self.portfolio
-                )
-                args = graph.propagator.get_graph_args(callbacks=[self.stats])
-                tid = graph.begin_checkpoint(self.ticker, self.trade_date, self.asset_type, self.portfolio)
-                if tid is not None:
-                    args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
-                    if getattr(graph, "_resuming", False):
-                        self._log("Resuming the saved checkpoint for this ticker and date")
-
-            final_state: dict = {}
-            try:
-                with self.trace.scope("graph", "research_graph"):
-                    for messages, chunk in graph.stream_run(graph.checkpoint_input(init_state), **args):
-                        if self._cancel.is_set():
-                            raise _Cancelled
-                        with self.lock:
-                            process_chunk(self.buffer, chunk, wall_time_tracker=tracker, messages=messages)
-                            if chunk and chunk.get("sentiment_judgments"):
-                                self.judgments = chunk["sentiment_judgments"]
-                        # Reports are available on the backend; their arrival
-                        # does not acknowledge a sourced result rendered by a browser.
-                        if chunk:
-                            if any(chunk.get(spec.report_key) for spec in plan.specs):
-                                self.trace.milestone("generated_report")
-                            final_state.update(chunk)
-                    if self._cancel.is_set():
-                        raise _Cancelled
-                with self.trace.scope("persistence", "decision_and_checkpoint"):
-                    graph.record_decision(self.ticker, self.trade_date, final_state)
-                    graph.clear_checkpoint_on_success(
+                with self.trace.scope("setup", "run_state_and_checkpoint"):
+                    init_state = graph.create_run_state(
                         self.ticker, self.trade_date, self.asset_type, self.portfolio
                     )
-            finally:
-                graph.end_checkpoint()
+                    args = graph.propagator.get_graph_args(callbacks=[self.stats])
+                    tid = graph.begin_checkpoint(self.ticker, self.trade_date, self.asset_type, self.portfolio)
+                    if tid is not None:
+                        args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
+                        if getattr(graph, "_resuming", False):
+                            self._log("Resuming the saved checkpoint for this ticker and date")
+                            # The stages the checkpoint already has are reused, not rerun.
+                            final_state.update(_checkpoint_values(graph, args))
+                            reused = {stage for stage, status in
+                                      run_completion(final_state, self.analysts)["stages"].items()
+                                      if status == "done"}
 
-            rating = run_rating(final_state)
-            report_path = graph.save_reports(final_state, self.ticker)
-            self.trace.milestone("persisted_report")
+                try:
+                    with self.trace.scope("graph", "research_graph"):
+                        for messages, chunk in graph.stream_run(graph.checkpoint_input(init_state), **args):
+                            self.control.check()
+                            with self.lock:
+                                process_chunk(self.buffer, chunk, wall_time_tracker=tracker, messages=messages)
+                                if chunk and chunk.get("sentiment_judgments"):
+                                    self.judgments = chunk["sentiment_judgments"]
+                            # Reports are available on the backend; their arrival
+                            # does not acknowledge a sourced result rendered by a browser.
+                            if chunk:
+                                if any(chunk.get(spec.report_key) for spec in plan.specs):
+                                    self.trace.milestone("generated_report")
+                                final_state.update(chunk)
+                        self.control.check()
+                    completion = run_completion(final_state, self.analysts, reused_stages=reused,
+                                                deadline_seconds=self.control.budget.deadline_seconds)
+                    if not is_complete(completion):
+                        # The graph ended with a stage that wrote nothing: no decision
+                        # is recorded, and the checkpoint goes so that running it again
+                        # starts fresh instead of resuming at the same empty end.
+                        graph.clear_checkpoint_on_success(
+                            self.ticker, self.trade_date, self.asset_type, self.portfolio)
+                        raise IncompleteResearch(completion)
+                    with self.trace.scope("persistence", "decision_and_checkpoint"):
+                        graph.record_decision(self.ticker, self.trade_date, final_state)
+                        graph.clear_checkpoint_on_success(
+                            self.ticker, self.trade_date, self.asset_type, self.portfolio
+                        )
+                finally:
+                    graph.end_checkpoint()
+
+                rating = run_rating(final_state)
+                report_path = graph.save_reports(final_state, self.ticker, completion=completion)
+                self.trace.milestone("persisted_report")
 
             with self.lock:
                 for agent in self.buffer.agent_status:
@@ -298,6 +353,8 @@ class AnalysisJob:
                     if final_state.get(section):
                         self.buffer.update_report_section(section, final_state[section])
                 self.buffer.add_message("System", tracker.format_summary())
+                for gap in describe_gaps(completion):
+                    self.buffer.add_message("System", f"Gap: {gap}.")
                 if is_review(rating):
                     self.buffer.add_message(
                         "System", "The final decision has no tradeable rating (none could "
@@ -306,30 +363,59 @@ class AnalysisJob:
                 self.final_state = final_state
                 self.rating = rating
                 self.report_path = report_path
+                self.completion = completion
                 self.status = DONE
-        except _Cancelled:
-            self.trace.event("cancelled")
-            with self.lock:
-                self.buffer.add_message("System", "Stopped by user")
-                self.status = CANCELLED
-        except Exception as exc:
-            self.trace.event("run_error", {"error_type": type(exc).__name__})
-            if self._cancel.is_set():  # stopped, whatever the step it interrupted raised
-                with self.lock:
-                    self.buffer.add_message("System", f"Stopped by user ({type(exc).__name__} as it stopped)")
-                    self.status = CANCELLED
-                return
-            log.exception("Analysis %s of %s failed", self.id, self.ticker)
-            with self.lock:
-                self.buffer.add_message("System", f"Failed: {exc}")
-                self.error = f"{type(exc).__name__}: {exc}"
-                self.status = FAILED
+        except (RunInterrupted, Exception) as exc:
+            self._stopped(exc, graph, final_state, reused)
         finally:
             self.finished = time.time()
-            if cancel_token is not None:
-                cancel_event.reset(cancel_token)
             _current_job.reset(job_token)
             self._finish_trace()
+
+    def _stopped(self, exc: BaseException, graph, final_state: dict, reused: set[str]) -> None:
+        """Record why the run stopped, and keep what it finished as a partial report."""
+        deadline = self.control.budget.deadline_seconds if self.control is not None else None
+        if isinstance(exc, IncompleteResearch):
+            completion, reason = exc.completion, STOP_MISSING
+        else:
+            # Whatever a step raised as the user stopped it, the run was stopped.
+            reason = (STOP_CANCELLED if self._cancel.is_set() and not isinstance(exc, DeadlineExceeded)
+                      else stop_reason_for(exc))
+            with self.lock:
+                active = [agent for agent, status in self.buffer.agent_status.items() if status == "in_progress"]
+            noted = self.control.provider_failure if self.control is not None else None
+            completion = run_completion(final_state, self.analysts, stop_reason=reason,
+                                        provider_failure=provider_failure_for(exc, noted),
+                                        active_stages=active, reused_stages=reused, deadline_seconds=deadline)
+        self.trace.event("run_stopped", {"reason": reason, "error_type": type(exc).__name__})
+        if reason == STOP_ERROR:
+            log.error("Analysis %s of %s failed", self.id, self.ticker, exc_info=exc)
+        partial = None
+        if completion["state"] == PARTIAL and self.config.get("save_partial_reports", True):
+            try:
+                with self.trace.scope("persistence", "partial_report"):
+                    settings = graph.run_settings() if hasattr(graph, "run_settings") else None
+                    partial = write_partial_report(
+                        final_state, self.ticker,
+                        report_dir(self.config.get("results_dir", "results"), self.ticker, "_partial"),
+                        completion, settings=settings)
+                self.trace.milestone("persisted_partial_report")
+            except Exception as save_exc:  # the run's status stands even if its partial report cannot be written
+                log.warning("Partial report for analysis %s could not be saved (%s)",
+                            self.id, type(save_exc).__name__)
+        with self.lock:
+            self.completion = completion
+            self.partial_report_path = partial
+            if reason == STOP_CANCELLED:
+                self.buffer.add_message("System", "Stopped by user")
+                self.status = CANCELLED
+            else:
+                self.error = f"{type(exc).__name__}: {exc}" if reason == STOP_ERROR else describe_stop(completion)
+                self.buffer.add_message("System", f"Failed: {self.error}")
+                self.status = FAILED
+            if partial is not None:
+                self.buffer.add_message(
+                    "System", f"What it finished is saved as a partial report, with no rating: {partial.parent}")
 
 
 @dataclass
@@ -550,12 +636,14 @@ class SavedReport:
     ticker: str
     trade_date: str | None
     modified: datetime
-    kind: str  # "report" (complete_report.md) or "state" (full_states_log JSON)
+    # "report" (complete_report.md), "partial" (partial_report.md: a stopped
+    # run's finished sections, with no rating) or "state" (full_states_log JSON)
+    kind: str
 
     @property
     def judgments_path(self) -> Path | None:
         """The Sentiment Analyst's saved Jev judgments, when the run made them."""
-        if self.kind != "report":
+        if self.kind not in ("report", "partial"):
             return None
         path = self.path.parent / "1_analysts" / "sentiment_judgments.json"
         return path if path.exists() else None
@@ -576,9 +664,10 @@ def list_saved_reports(results_dir) -> list[SavedReport]:
     if not root.exists():
         return []
     found = []
-    for path in root.rglob("complete_report.md"):
-        ticker, trade_date = _report_header(path)
-        found.append(SavedReport(path, ticker, trade_date, _mtime(path), "report"))
+    for name, kind in (("complete_report.md", "report"), ("partial_report.md", "partial")):
+        for path in root.rglob(name):
+            ticker, trade_date = _report_header(path)
+            found.append(SavedReport(path, ticker, trade_date, _mtime(path), kind))
     for path in root.rglob("full_states_log_*.json"):
         # <results>/<TICKER>/TradingAgentsStrategy_logs/full_states_log_<date>.json
         found.append(SavedReport(path, path.parent.parent.name,
@@ -596,7 +685,7 @@ def _report_header(path: Path) -> tuple[str, str | None]:
     Reports written before the header carried the date give None for it, and a
     report with no readable header falls back to its folder name for the ticker.
     """
-    ticker, trade_date = path.parent.name.rsplit("_", 2)[0], None
+    ticker, trade_date = path.parent.name.removesuffix("_partial").rsplit("_", 2)[0], None
     try:
         with path.open(encoding="utf-8") as f:
             head = [next(f, "") for _ in range(12)]
@@ -604,7 +693,7 @@ def _report_header(path: Path) -> tuple[str, str | None]:
         return ticker, None
     for line in head:
         line = line.removeprefix("- ")  # the header lists what produced the run
-        if line.startswith("# Trading Analysis Report:"):
+        if line.startswith(("# Trading Analysis Report:", "# Partial Research Report (incomplete):")):
             ticker = line.split(":", 1)[1].strip()
         elif line.startswith("Analysis date:"):
             trade_date = line.split(":", 1)[1].strip() or None
@@ -613,7 +702,7 @@ def _report_header(path: Path) -> tuple[str, str | None]:
 
 def load_report_sections(report: SavedReport) -> list[tuple[str, str]]:
     """(title, markdown) sections of a saved report, in pipeline order."""
-    if report.kind == "report":
+    if report.kind in ("report", "partial"):
         text = report.path.read_text(encoding="utf-8")
         heads = list(_SECTION_RE.finditer(text))
         ends = [h.start() for h in heads[1:]] + [len(text)]

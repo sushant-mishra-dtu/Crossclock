@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 import cli.run as cli_run
+from tests.run_states import complete_state
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.memory import TradingMemoryLog
 
@@ -77,7 +78,8 @@ class _FakeGraph:
 
     def stream_run(self, graph_input, **kwargs):
         yield [], {"messages": [], "market_report": "M"}
-        yield [], {"messages": [], "final_trade_decision": "Rating: Buy\n\nBuy NVDA.", "final_rating": "Buy"}
+        yield [], {"messages": [], **complete_state(
+            final_trade_decision="Rating: Buy\n\nBuy NVDA.", final_rating="Buy")}
 
 
 class _NullLive:

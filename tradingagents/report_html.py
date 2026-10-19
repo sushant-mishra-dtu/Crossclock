@@ -13,6 +13,7 @@ from importlib.resources import files
 from markdown_it import MarkdownIt
 
 from tradingagents.agents.rating import run_rating
+from tradingagents.completion import describe_stop, is_complete, status_line
 from tradingagents.reporting import analyst_names
 
 # Ratings by direction, so the page can show which way the call leans.
@@ -73,6 +74,8 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .run dt { color: var(--muted); }
 .run dd { margin: 0; overflow-wrap: anywhere; }
 .run .note dd { color: var(--down); }
+.masthead .banner { margin: 0 0 1.5rem; padding: 0.75rem 1rem; border: 1px solid var(--down);
+  border-radius: 6px; color: var(--down); font: 600 1rem/1.45 var(--sans); }
 .field { display: inline-block; margin: 0 0.15rem 0.15rem 0; padding: 0 0.4rem; border: 1px solid var(--edge);
   border-radius: 4px; background: var(--wash); font: 0.8rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .run .group { display: inline-block; margin-right: 0.9rem; white-space: nowrap; }
@@ -245,21 +248,35 @@ def _run_details(final_state: dict, settings: dict | None) -> list[tuple[str, st
     return details
 
 
-def render_report(ticker: str, final_state: dict, settings: dict | None, parts) -> str:
-    """The report page: title and rating, what produced the run, contents, sections."""
+def render_report(ticker: str, final_state: dict, settings: dict | None, parts,
+                  completion: dict | None = None) -> str:
+    """The report page: title and rating, what produced the run, contents, sections.
+
+    A partial run (``completion`` not complete) shows no rating and opens with
+    a banner saying why it stopped.
+    """
     md = _markdown()
-    rating = run_rating(final_state) if final_state.get("final_trade_decision") else ""
+    partial = completion is not None and not is_complete(completion)
+    rating = run_rating(final_state) if final_state.get("final_trade_decision") and not partial else ""
     tone = _TONE.get(rating, "review")
     date = final_state.get("trade_date", "")
 
     title = f'<span class="ticker">{escape(ticker)}</span>'
     if rating:
         title += f' <span class="rating {tone}">{escape(rating)}</span>'
+    elif partial:
+        title += ' <span class="rating review">Partial</span>'
+    run_details = _run_details(final_state, settings)
+    if completion is not None:
+        run_details.insert(0, ("Run status", escape(status_line(completion))))
+    noted = {"Memory log"} | ({"Run status"} if completion is not None and completion.get("state") != "complete" else set())
     details = "".join(
-        f'<div class="{"note" if label == "Memory log" else "detail"}">'
+        f'<div class="{"note" if label in noted else "detail"}">'
         f"<dt>{escape(label)}</dt><dd>{value}</dd></div>"
-        for label, value in _run_details(final_state, settings)
+        for label, value in run_details
     )
+    banner = (f'<p class="banner" role="note">Incomplete research. {escape(describe_stop(completion))} '
+              "No rating; this is not a decision to act on.</p>") if partial else ""
 
     contents, body = [], []
     for n, (heading, _folder, written) in enumerate(parts, 1):
@@ -275,7 +292,7 @@ def render_report(ticker: str, final_state: dict, settings: dict | None, parts) 
             body.append(f'<h3 id="s{n}-{m}">{escape(agent)}</h3>\n{_render_agent_text(md, text)}')
         body.append("</section>")
 
-    page_title = " ".join(x for x in (ticker, date, rating) if x)
+    page_title = " ".join(x for x in (ticker, date, rating or ("partial" if partial else "")) if x)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -291,6 +308,7 @@ def render_report(ticker: str, final_state: dict, settings: dict | None, parts) 
 <a class="logo" href="{_COMPANY}" rel="noopener" aria-label="Tauric Research">{_LOGO}</a>
 <h1>{title}</h1>
 <p class="date">{escape(f"Analysis of {date}" if date else "Analysis")}</p>
+{banner}
 <dl class="run">{details}</dl>
 </header>
 <nav class="contents" aria-label="Sections"><ul>{"".join(contents)}</ul></nav>

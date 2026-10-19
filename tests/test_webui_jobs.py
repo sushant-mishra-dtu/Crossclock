@@ -22,11 +22,14 @@ CHUNKS = [
                             tool_calls=[{"name": "get_stock_data", "args": {"symbol": "NVDA"},
                                          "id": "t1"}])]},
     {"messages": [], "market_report": "## Trend\nUptrend intact."},
-    {"messages": [], "investment_debate_state": {"bull_history": "Bull case", "bear_history": ""},
+    # Every stage a market-only run needs writes something, so the run is complete.
+    {"messages": [], "investment_debate_state": {"bull_history": "Bull Analyst: Bull case",
+                                                 "bear_history": "Bear Analyst: Bear case"},
      "investment_plan": "Go long"},
     {"messages": [], "trader_investment_plan": "Buy 10 units"},
-    {"messages": [], "risk_debate_state": {"aggressive_history": "More", "conservative_history": "",
-                                           "neutral_history": ""}},
+    {"messages": [], "risk_debate_state": {"aggressive_history": "Aggressive Analyst: More",
+                                           "conservative_history": "Conservative Analyst: Less",
+                                           "neutral_history": "Neutral Analyst: Hold some"}},
     {"messages": [], "final_trade_decision": DECISION},
 ]
 
@@ -64,10 +67,11 @@ class FakeGraph:
         for chunk in self.stream(state, **args):
             yield chunk.get("messages", []), chunk
 
-    def save_reports(self, final_state, ticker):
+    def save_reports(self, final_state, ticker, completion=None):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return write_report_tree(final_state, ticker,
-                                 Path(self.config["results_dir"]) / "reports" / f"{ticker}_{stamp}")
+                                 Path(self.config["results_dir"]) / "reports" / f"{ticker}_{stamp}",
+                                 completion=completion)
 
     def record_decision(self, ticker, date, state):
         TradingMemoryLog(self.config).store_decision(ticker, date, state["final_trade_decision"])

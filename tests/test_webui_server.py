@@ -19,6 +19,7 @@ from langchain_core.messages import AIMessage
 from cli import main as cli_main
 from cli.webui import server
 from cli.webui.jobs import JobRegistry
+from tests.run_states import LATER_STAGES
 from tradingagents.dataflows.errors import NoMarketDataError, VendorUnavailableError
 from tradingagents.dataflows.vendors.yahoo import company_profile as yahoo_company
 from tradingagents.graph import trading_graph
@@ -40,7 +41,9 @@ CHUNKS = [
      "market_report": "## Trend\nUp."},
     {"messages": [], "sentiment_report": "**Overall: Mildly Bullish**",
      "sentiment_judgments": JUDGMENTS},
-    {"messages": [], "risk_debate_state": {"aggressive_history": "Size up."}},
+    # The later stages a complete run needs, the aggressive turn replaced with its own text.
+    {"messages": [], **{key: value for key, value in LATER_STAGES.items() if key != "risk_debate_state"},
+     "risk_debate_state": {**LATER_STAGES["risk_debate_state"], "aggressive_history": "Size up."}},
     {"messages": [], "final_trade_decision": DECISION},
 ]
 
@@ -70,10 +73,11 @@ class FakeGraph:
         for chunk in self.stream(state, **args):
             yield chunk.get("messages", []), chunk
 
-    def save_reports(self, final_state, ticker):
+    def save_reports(self, final_state, ticker, completion=None):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return write_report_tree(final_state, ticker,
-                                 Path(self.config["results_dir"]) / "reports" / f"{ticker}_{stamp}")
+                                 Path(self.config["results_dir"]) / "reports" / f"{ticker}_{stamp}",
+                                 completion=completion)
 
     def record_decision(self, ticker, date, state):
         from tradingagents.memory import TradingMemoryLog

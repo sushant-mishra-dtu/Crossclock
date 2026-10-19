@@ -23,12 +23,26 @@ from cli.display import (
 from cli.selections import depth_from_env, get_user_selections, unattended_gaps
 from cli.stats_handler import StatsCallbackHandler
 from tradingagents.agents.rating import is_review, run_rating
+from tradingagents.completion import (
+    PARTIAL,
+    STOP_CANCELLED,
+    STOP_ERROR,
+    IncompleteResearch,
+    describe_gaps,
+    describe_stop,
+    is_complete,
+    provider_failure_for,
+    run_completion,
+    stop_reason_for,
+)
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.analyst_execution import (
     build_analyst_execution_plan,
 )
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.reporting import report_dir as stamped_report_dir, write_partial_report
+from tradingagents.run_control import RunControl, RunInterrupted, use_control
 
 
 def _run_directory(config: dict, ticker: str, trade_date: str) -> Path:
@@ -233,22 +247,35 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
         # Stream the analysis. On resume, feed None so LangGraph continues the
         # interrupted run instead of re-appending the initial state (#1249); the
         # try/finally tears the checkpointer down even if the stream raises.
+        # The run's budget (docs/adr/0001): a deadline, and Ctrl-C as Stop.
+        control = RunControl.from_config(config)
         trace = []
+        stopped = None
         try:
-            for messages, chunk in graph.stream_run(graph.checkpoint_input(init_agent_state), **args):
-                process_chunk(message_buffer, chunk, wall_time_tracker=analyst_wall_time_tracker,
-                              messages=messages)
+            with use_control(control):
+                for messages, chunk in graph.stream_run(graph.checkpoint_input(init_agent_state), **args):
+                    process_chunk(message_buffer, chunk, wall_time_tracker=analyst_wall_time_tracker,
+                                  messages=messages)
 
-                update_display(layout, stats_handler=stats_handler, start_time=start_time)
+                    update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-                if chunk is not None:   # a step inside an analyst's graph: messages only
-                    trace.append(chunk)
+                    if chunk is not None:   # a step inside an analyst's graph: messages only
+                        trace.append(chunk)
 
             # Streamed chunks are per-node deltas, not full state. Merge them
             # so every report field populated across the run is present.
             final_state = {}
             for chunk in trace:
                 final_state.update(chunk)
+
+            # A run whose graph ended with a stage that wrote nothing records no
+            # decision, and drops its checkpoint so the next run starts fresh.
+            completion = run_completion(final_state, selected_analyst_keys,
+                                        deadline_seconds=control.budget.deadline_seconds)
+            if not is_complete(completion):
+                graph.clear_checkpoint_on_success(
+                    selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio)
+                raise IncompleteResearch(completion)
 
             # Clean run: log the decision, then drop this run's checkpoint so a
             # later run starts fresh. A mid-stream failure skips both, keeping
@@ -257,26 +284,47 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
             graph.clear_checkpoint_on_success(
                 selections["ticker"], selections["analysis_date"], selections["asset_type"], portfolio
             )
+        except KeyboardInterrupt as exc:
+            control.cancel()  # requests other threads have in flight send nothing more
+            stopped = exc
+        except (RunInterrupted, Exception) as exc:
+            stopped = exc
         finally:
             # Always restore the plain uncheckpointed graph, even on failure.
             graph.end_checkpoint()
 
-        for agent in message_buffer.agent_status:
-            message_buffer.update_agent_status(agent, "completed")
+        if stopped is None:
+            for agent in message_buffer.agent_status:
+                message_buffer.update_agent_status(agent, "completed")
 
-        message_buffer.add_message(
-            "System", f"Completed analysis for {selections['analysis_date']}"
-        )
-        message_buffer.add_message("System", analyst_wall_time_tracker.format_summary())
+            message_buffer.add_message(
+                "System", f"Completed analysis for {selections['analysis_date']}"
+            )
+            message_buffer.add_message("System", analyst_wall_time_tracker.format_summary())
 
-        for section in message_buffer.report_sections:
-            if section in final_state:
-                message_buffer.update_report_section(section, final_state[section])
+            for section in message_buffer.report_sections:
+                if section in final_state:
+                    message_buffer.update_report_section(section, final_state[section])
 
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+            update_display(layout, stats_handler=stats_handler, start_time=start_time)
+
+    # A stopped, timed-out or failed run keeps what it finished as a partial
+    # report and says why it stopped; it never reaches the complete-run prompts.
+    if stopped is not None:
+        final_state = {}
+        for chunk in trace:
+            final_state.update(chunk)
+        active = [agent for agent, status in message_buffer.agent_status.items() if status == "in_progress"]
+        _report_stop(stopped, graph, config, selected_analyst_keys, final_state, control, active,
+                     selections["ticker"])
+        if not isinstance(stopped, KeyboardInterrupt) and stop_reason_for(stopped) == STOP_ERROR:
+            raise stopped
+        raise typer.Exit(code=130 if isinstance(stopped, KeyboardInterrupt) else 1)
 
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
+    for gap in describe_gaps(completion):
+        console.print(f"[yellow]Gap: {gap}.[/yellow]")
 
     # A decision nobody can read, or one the claim check sent to review, is not
     # a position. Say so here rather than leaving the run to look like a normal result.
@@ -290,7 +338,34 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
 
     _offer_reports(final_state, graph, selections["ticker"],
-                   save=flags.get("save"), show=flags.get("show"), html=flags.get("html"))
+                   save=flags.get("save"), show=flags.get("show"), html=flags.get("html"),
+                   completion=completion)
+
+
+def _report_stop(exc: BaseException, graph, config: dict, analysts: list[str], final_state: dict,
+                 control, active: list[str], ticker: str) -> None:
+    """Say why the run stopped, and save what it finished as a partial report."""
+    if isinstance(exc, IncompleteResearch):
+        completion = exc.completion
+    else:
+        reason = STOP_CANCELLED if isinstance(exc, KeyboardInterrupt) else stop_reason_for(exc)
+        completion = run_completion(
+            final_state, analysts, stop_reason=reason, active_stages=active,
+            provider_failure=provider_failure_for(exc, control.provider_failure),
+            deadline_seconds=control.budget.deadline_seconds)
+    console.print(f"\n[bold red]Research incomplete.[/bold red] {describe_stop(completion)}")
+    if completion["state"] == PARTIAL and config.get("save_partial_reports", True):
+        try:
+            settings = graph.run_settings() if hasattr(graph, "run_settings") else None
+            path = write_partial_report(final_state, ticker,
+                                        stamped_report_dir(config["results_dir"], ticker, "_partial"),
+                                        completion, settings=settings)
+            console.print(f"[yellow]What it finished is saved as a partial report, with no rating:[/yellow] "
+                          f"{path.parent.resolve()}")
+        except Exception as save_exc:
+            console.print(f"[red]The partial report could not be saved: {type(save_exc).__name__}[/red]")
+    if config.get("checkpoint_enabled") and not isinstance(exc, IncompleteResearch):
+        console.print("[dim]Run the same ticker and date again to resume from the last finished step.[/dim]")
 
 
 def _yes(question: str) -> bool:
@@ -327,7 +402,7 @@ def _open_page(page: Path) -> None:
         console.print(f"  [dim]Could not open a browser; the page is at:[/dim] {page}")
 
 
-def _offer_reports(final_state, graph, ticker, save=None, show=None, html=None):
+def _offer_reports(final_state, graph, ticker, save=None, show=None, html=None, completion=None):
     """Save the report tree and show it; ``save``/``show``/``html`` answer the questions when given.
 
     A saved report includes the HTML page unless ``html`` is False. Someone
@@ -350,7 +425,7 @@ def _offer_reports(final_state, graph, ticker, save=None, show=None, html=None):
             html = _yes("Also save it as an HTML page?") if asked else True
         saved = False
         try:
-            report_file = graph.save_reports(final_state, ticker, save_path, html=html)
+            report_file = graph.save_reports(final_state, ticker, save_path, html=html, completion=completion)
             saved = True
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")

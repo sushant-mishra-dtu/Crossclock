@@ -786,28 +786,48 @@ PAGES['/analyze'] = {
       cancelled: `<span class="pill pill-plain" role="status">${I.stop}Stopped</span>`,
     }[d.status] || '';
     const picker = analyze.jobs.length > 1 && !DEMO ? `<div class="row" style="gap: 8px;"><label for="run-pick" class="faint" style="font-size: 13px;">Run</label>${selectWrap(`<select id="run-pick" class="mono">${analyze.jobs.map((j) => `<option value="${esc(j.id)}" ${j.id === d.id ? 'selected' : ''}>${esc(j.ticker)} · ${esc(j.date)} · ${esc(j.status)}</option>`).join('')}</select>`, 'raised')}</div>` : '';
-    const stop = active ? `<span id="stop-hint" class="faint" style="font-size: 13px;">${stopping ? 'Stopping after the current step…' : 'Stops after the current step'}</span>
+    // A request already sent is not cut off: it ends or times out, then the run stops.
+    const run = d.run || {};
+    const waiting = stopping && run.inFlight
+      ? `Stopping: waiting for ${run.inFlight} request${run.inFlight === 1 ? '' : 's'} in flight (at most ${Math.round(run.attemptTimeoutSeconds)} s)…`
+      : 'Stopping after the current step…';
+    const stop = active ? `<span id="stop-hint" class="faint" style="font-size: 13px;">${stopping ? waiting : 'Stops after the current step'}</span>
       <button type="button" class="btn btn-danger b" data-stop aria-describedby="stop-hint" ${stopping ? 'disabled' : ''}>${I.stop}Stop</button>` : '';
     return `<h2 id="live-h" class="live-title"><span class="mono" style="font-weight: 500;">${esc(d.ticker)}</span> · ${esc(d.date)}</h2>${pill}<div class="grow"></div>${picker}${stop}`;
   },
 
+  /** Where a stopped or failed run's finished sections were saved: a partial report, with no rating. */
+  partialHtml(d) {
+    if (!d.partialReportDir) return '';
+    return `<p class="hint" style="margin-top: 6px;">What it finished is saved as a partial report, with no rating: <span class="mono" style="font-size: 13px;">${esc(d.partialReportDir)}</span>${DEMO ? '' : ` · <a href="/api/analyses/${encodeURIComponent(d.id)}/report.md" download>Download the partial report</a>`}</p>`;
+  },
+
   decisionHtml(d) {
+    const c = d.completion;
     if (d.status === 'failed') {
       const [first, ...rest] = String(d.error || 'The run failed.').split('\n\n');
-      return `<div class="alert alert-neg">${I.alert}<div class="grow"><div>${esc(first)}</div>${rest.length ? `<details style="margin-top: 6px;"><summary style="cursor: pointer; color: var(--text-2);">Traceback</summary><pre class="mono">${esc(rest.join('\n\n'))}</pre></details>` : ''}</div></div>`;
+      return `<div class="alert alert-neg">${I.alert}<div class="grow"><div><strong>Incomplete research.</strong> ${esc(first)}</div>${rest.length ? `<details style="margin-top: 6px;"><summary style="cursor: pointer; color: var(--text-2);">Traceback</summary><pre class="mono">${esc(rest.join('\n\n'))}</pre></details>` : ''}${this.partialHtml(d)}</div></div>`;
     }
     if (d.status === 'cancelled') {
-      return `<div class="alert alert-info">${I.alert}<div>Stopped. With checkpoints on, running the same ticker and date again resumes where this run left off.</div></div>`;
+      return `<div class="alert alert-info">${I.alert}<div class="grow"><div>Stopped. With checkpoints on, running the same ticker and date again resumes where this run left off.</div>${this.partialHtml(d)}</div></div>`;
+    }
+    if (d.status === 'running' && d.run && d.run.retry) {
+      const r = d.run.retry;
+      const kind = { timeout: 'a timeout', rate_limit: 'a rate limit', server: 'a server error', connection: 'a connection failure', auth: 'a rejected key' }[r.error_class] || 'a provider error';
+      return `<div class="alert alert-info" role="status">${I.alert}<div>The model provider returned ${esc(kind)}; retrying in ${Math.ceil(r.remaining_seconds)} s (attempt ${esc(r.attempts)} failed).</div></div>`;
     }
     if (d.status !== 'done') return '';
     const tone = TONE[d.rating] || '';
     const review = !TONE[d.rating];
+    const gaps = c && c.gaps && c.gaps.length
+      ? `<p class="hint">Complete with gaps: ${c.gaps.map((g) => esc(g)).join('; ')}.</p>` : '';
     return `<div class="card decision ${tone === 'neutral' ? '' : tone}">
       ${plate(d.rating)}
       <div class="grow stack" style="gap: 4px;">
         <div style="font-size: 13px; font-weight: 500; color: ${tone === 'pos' ? 'var(--pos-text)' : tone === 'neg' ? 'var(--neg-text)' : 'var(--text-2)'};">Portfolio manager's call</div>
         ${d.reportDir ? `<div class="muted" style="font-size: 15px;">Saved to <span class="mono" style="font-size: 13px; color: var(--text);">${esc(d.reportDir)}</span></div>` : ''}
         ${review ? '<p class="hint">No tradeable rating: none could be read from the final decision, or the claim check sent it to review. It is logged for review; read the decision and judge it yourself.</p>' : ''}
+        ${gaps}
       </div>
       ${d.reportDir && !DEMO ? `<a class="btn b" href="/api/analyses/${encodeURIComponent(d.id)}/report.md" download>${I.download}Download report</a>` : ''}
     </div>`;
@@ -823,6 +843,10 @@ PAGES['/analyze'] = {
       ['Tool calls', s.tool_calls, ''],
       ['Tokens', kilo(s.tokens_in + s.tokens_out), `${s.tokens_in.toLocaleString()} in · ${s.tokens_out.toLocaleString()} out`],
     ];
+    // While it runs: the time left before the research mode's deadline stops it.
+    if (d.run && d.run.remainingSeconds != null) {
+      items.splice(1, 0, ['Time left', duration(Math.max(d.run.remainingSeconds, 0)), `Deadline ${duration(d.run.deadlineSeconds)}; each model request at most ${Math.round(d.run.attemptTimeoutSeconds)} s`]);
+    }
     return items.map(([label, value, hint]) => `<div class="metric lift" ${hint ? `title="${esc(hint)}"` : ''}><dd>${esc(value)}</dd><dt>${label}</dt></div>`).join('');
   },
 
@@ -860,7 +884,9 @@ PAGES['/analyze'] = {
       } else {
         if (analyze.followNewest || !ready.some((s) => s.key === analyze.section)) analyze.section = ready[ready.length - 1].key;
         const cur = ready.find((s) => s.key === analyze.section);
-        body = `<div class="stack" style="gap: 14px;">
+        const partial = d.status === 'failed' || d.status === 'cancelled'
+          ? '<p class="hint" role="note">Partial: these sections were finished before the run stopped. There is no decision or rating.</p>' : '';
+        body = `<div class="stack" style="gap: 14px;">${partial}
           <div class="chips" role="group" aria-label="Report section">${ready.map((s) => `<button type="button" class="chip sm b" data-section="${s.key}" aria-pressed="${attr(s.key === cur.key)}">${esc(s.title)}</button>`).join('')}</div>
           <article class="well-box article"><h3>${esc(cur.title)}</h3>${md(cur.body)}</article></div>`;
       }
@@ -2697,20 +2723,20 @@ PAGES['/reports'] = {
     if (!d.sections.some((s) => s.title === reports.section)) reports.section = d.sections.length ? d.sections[d.sections.length - 1].title : null;
     const cur = d.sections.find((s) => s.title === reports.section);
     const cards = reports.list.map((r) => `<li><button type="button" class="report-card b" data-report="${esc(r.id)}" aria-pressed="${attr(r.id === reports.id)}">
-      <span class="stack" style="gap: 2px; align-items: flex-start; min-width: 0;"><span class="mono" style="font-size: 15px; font-weight: 500;">${esc(r.ticker)}</span><span class="faint" style="font-size: 13px;">${esc(r.date || r.modified)}${r.kind === 'state' ? ' · state log' : ''}</span></span>
+      <span class="stack" style="gap: 2px; align-items: flex-start; min-width: 0;"><span class="mono" style="font-size: 15px; font-weight: 500;">${esc(r.ticker)}</span><span class="faint" style="font-size: 13px;">${esc(r.date || r.modified)}${r.kind === 'state' ? ' · state log' : r.kind === 'partial' ? ' · partial, no rating' : ''}</span></span>
       ${r.rating ? ratingPill(r.rating) : ''}</button></li>`).join('');
     body.innerHTML = `<div class="reports-layout">
       <section class="report-list" aria-labelledby="list-h"><h2 id="list-h" class="label-h">Saved reports</h2><ul>${cards}</ul></section>
       <article class="card report-view" aria-labelledby="rep-h">
         <div class="row" style="gap: 24px; flex-wrap: wrap;">
-          ${plate(d.rating)}
+          ${d.kind === 'partial' ? '' : plate(d.rating)}
           <div class="grow stack" style="gap: 4px;">
             <h2 id="rep-h" style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em;"><span class="mono" style="font-weight: 500; letter-spacing: 0;">${esc(d.ticker)}</span> · ${esc(d.date || d.modified)}</h2>
-            <span class="muted" style="font-size: 14px;">Portfolio manager's call${d.date ? ` · saved ${esc(d.modified)}` : ''}</span>
+            <span class="muted" style="font-size: 14px;">${d.kind === 'partial' ? 'Partial report: the run stopped before it finished; no rating, not a decision' : "Portfolio manager's call"}${d.date ? ` · saved ${esc(d.modified)}` : ''}</span>
           </div>
           <div class="row" style="gap: 8px; flex-wrap: wrap;">
             ${d.hasJudgments ? `<a class="btn b" href="/sentiment?report=${encodeURIComponent(d.id)}" data-link>Item judgments${I.arrow}</a>` : ''}
-            <a class="btn b" href="/api/report/download?id=${encodeURIComponent(d.id)}" download>${I.download}Download ${d.kind === 'report' ? 'Markdown' : 'JSON'}</a>
+            <a class="btn b" href="/api/report/download?id=${encodeURIComponent(d.id)}" download>${I.download}Download ${d.kind === 'state' ? 'JSON' : 'Markdown'}</a>
           </div>
         </div>
         ${d.sections.length ? `<div class="chips" role="group" aria-label="Report section">${d.sections.map((s) => `<button type="button" class="chip sm b" data-rsection="${esc(s.title)}" aria-pressed="${attr(s.title === reports.section)}">${esc(s.title)}</button>`).join('')}</div>

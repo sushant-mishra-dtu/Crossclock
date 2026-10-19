@@ -24,6 +24,7 @@ from typing import Any
 
 from tradingagents.dataflows.config import get_config
 from tradingagents.llm_clients.telemetry import observe_http_client, transport_call
+from tradingagents.run_control import CHECK_DISABLED, CHECK_UNAVAILABLE, current_control
 from tradingagents.telemetry import current_trace
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,11 @@ def jev_client() -> Any | None:
         return None
 
 
+def jev_absence() -> str:
+    """Why ``jev_client`` gave None, as a run-check status: switched off, or not set up."""
+    return CHECK_DISABLED if not get_config().get("jev_enabled", True) else CHECK_UNAVAILABLE
+
+
 @cache
 def _warn_sdk_missing() -> None:
     # Once per process: every judged debate turn asks for a client.
@@ -76,17 +82,22 @@ def _field(value, key, default=None):
 
 def _observed_system_one(client, *args, **kwargs):
     trace = current_trace()
-    if trace is None:
+    control = current_control()
+    if trace is None and control is None:
         return client.system_one(*args, **kwargs)
     model = kwargs.get("model") or _field(_field(client, "_config"), "default_model") or get_config().get("jev_model") or "jev-latest"
     try:
+        # The hooks also hold Jev's own retries to the run's Stop and deadline.
         observed = observe_http_client(getattr(client, "_http_client", None))
     except Exception:
         observed = False
-    if not observed:
-        trace.gap("jev_transport_attempts_unobserved")
     transport = SimpleNamespace(model_name=model, _telemetry_provider="typesafe",
                                 _telemetry_transport_coverage="httpx_hooks" if observed else "unsupported")
+    if trace is None:
+        with transport_call(transport):
+            return client.system_one(*args, **kwargs)
+    if not observed:
+        trace.gap("jev_transport_attempts_unobserved")
     with trace.scope("jev", "system_one", {"provider": "typesafe", "model": model}) as span:
         try:
             with transport_call(transport):

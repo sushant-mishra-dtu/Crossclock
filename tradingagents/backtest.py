@@ -27,6 +27,7 @@ from tradingagents.dataflows.date_window import get_current_date
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.memory import TradingMemoryLog
+from tradingagents.run_control import DeadlineExceeded, RunCancelled
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,11 @@ def run_backtest(
         try:
             graph.propagate(ticker, date, asset_type, portfolio=portfolio)
             result.cells_run += 1
-        except Exception as exc:  # one unreachable vendor must not end the sweep
+        except RunCancelled:  # a stop ends the sweep like should_stop, settling nothing
+            result.stopped = True
+            break
+        # A cell past its deadline is one failed cell; its checkpoint lets a re-run resume it.
+        except (Exception, DeadlineExceeded) as exc:  # one unreachable vendor must not end the sweep
             logger.warning("Backtest cell %s %s failed: %s", ticker, date, exc)
             result.failures.append((ticker, date, str(exc)))
 

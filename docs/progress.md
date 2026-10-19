@@ -1,6 +1,6 @@
 # Crossclock progress
 
-Last updated: 16 October 2026 (Asia/Calcutta)
+Last updated: 19 October 2026 (Asia/Calcutta)
 Execution plan: [plan.md](plan.md)  
 Baseline reviewed: `4b2a3f781fdda6cb3a7594c3191122d4fe5b6836`
 
@@ -8,7 +8,9 @@ Baseline reviewed: `4b2a3f781fdda6cb3a7594c3191122d4fe5b6836`
 
 The measurement sprint started on 14 October 2026. **C01 is complete as a diagnostic baseline** under the registered 180-second NVIDIA timeout: three matched cold/warm pairs on one configuration, with every warm run's cache seed verified by hash. On 16 October the owner approved a new 144-send NVIDIA allowance. A seeded warm run finished recovery pair 2 and pair 3 ran cold and warm, using 83 sends and 24 Jev sends with no failure. Median research time to a persisted report was 371.908 s cold and 435.775 s warm (n=3 each). The 10 ms synthetic source cache cannot explain that difference, so there is no cache-speed claim. The original 60-second cohort keeps one complete pair and is not pooled. [The benchmark record](benchmarks/c01.md) has the details. No live calls remain running.
 
-Next tasks: **C03, deadlines, retries, cancel and partial states**, and **C04, shared evidence and bounded retrieval**, both waited on C01. The selected shorter, source-grounded bull/bear experiment compares against the 180-second baseline after a held-out claim/coverage set exists. Run **C02, user-task and data-access discovery**, alongside them when the project owner is available.
+**C03 is built and tested offline, with two full-suite failures still to resolve** (17 October; committed to `main` on 19 October with those failures still open). Its [design](adr/0001-bounded-execution-and-run-status.md) was approved as proposed: a 1,200 s Standard deadline, a 180 s attempt timeout for every provider, partial reports saved by default, and claim-check failures labelled only. Source inspection found the app had no request timeout at all for NVIDIA and Anthropic models; every provider now gets one. One retry loop with deadline-aware waits replaces the two stacked layers. Stop and the deadline refuse every later HTTP send, SDK and Jev retries included. A stopped, timed-out or failed run saves a partial report with no rating, and records no decision. Offline tests cover these paths; no live provider call or browser walkthrough was made.
+
+Next task: **C04, shared evidence and bounded retrieval**. C03's new configuration keys give C01 benchmark-runner runs a new configuration hash, so later experiment comparisons need a post-C03 baseline (see open decisions). The selected shorter, source-grounded bull/bear experiment compares against the 180-second baseline after a held-out claim/coverage set exists. Run **C02, user-task and data-access discovery**, alongside them when the project owner is available.
 
 The initial audience remains an NSE watchlist investor hypothesis, with US-equity validation. The owner authorized limited NVIDIA quota use and Jev up to US$1. Keys were checked without displaying them and both live services responded. No achieved product speedup, customer validation or real-source completion-time claim exists.
 
@@ -31,7 +33,7 @@ Evidence labels are separate: **source reviewed**, **external source reviewed**,
 | C00 | Repository research, plan and progress tracker | Complete | Codex | [Plan](plan.md), linked repository evidence and dated external sources; documentation only |
 | C01 | Instrumentation and baseline | Complete | Codex; completed in Claude Code | [Benchmark record](benchmarks/c01.md): 180-second cohort has three matched pairs with verified cache seeds; 60-second cohort keeps one pair, not pooled. Across all six graph attempts: 9 completions, 5 failures, 11 unstarted. Diagnostic scope only: synthetic sources, no UI first-useful-result, quality or tail claim |
 | C02 | User tasks and data-access inventory | Not started | Unassigned: product owner | Validate target cohort, prepare three pilot tasks, record access/rights and any actual user feedback |
-| C03 | Deadlines, retries, cancel and partial states | Not started | Unassigned: engineering | After C01; enforce budgets across SDK and outer retries; verify cancellation/restart and coverage labels |
+| C03 | Deadlines, retries, cancel and partial states | In progress: two full-suite failures to resolve | Claude Code | [Design and implementation](adr/0001-bounded-execution-and-run-status.md); [acceptance tests](../tests/test_c03_run_control.py) pass offline. Not live measured: no provider call, no browser walkthrough, deadline-miss rate unknown |
 | C04 | Shared evidence and bounded retrieval | Not started | Unassigned: engineering | After C01; prototype one ticker's source reuse, freshness/as-of enforcement and in-flight deduplication |
 | C05 | Brief and source drawer | Not started | Unassigned: product + engineering | After C04 schema; make facts, sources, timestamps, gaps and check status inspectable |
 | C06 | Research modes and first Quick path | Not started | Unassigned: engineering | Sprint stretch or next sprint; bounded Quick path distinct from a full decision; preserve Standard baseline |
@@ -50,8 +52,8 @@ Evidence labels are separate: **source reviewed**, **external source reviewed**,
 | --- | --- | --- |
 | Analysts run concurrently; research and risk stages follow sequentially | Source reviewed: [graph setup](../tradingagents/graph/setup.py) | Actual duration and critical path on the selected provider |
 | Default research/risk limits are one round each; tool cap is 20 | Source reviewed: [defaults](../tradingagents/default_config.py) | Which calls or output lengths can be reduced without losing quality |
-| Outer transient retry waits sum to 190 seconds when all are taken, in addition to SDK attempts | Source reviewed: [OpenAI-compatible client](../tradingagents/llm_clients/openai_client.py) | Frequency and real impact; this is not an observed average or maximum run time |
-| Gemini has an explicit 600-second request timeout | Source reviewed: [Google client](../tradingagents/llm_clients/google_client.py) | Appropriate per-mode limits and cancellation behavior on live providers |
+| Outer transient retry waits sum to 190 seconds when all are taken, in addition to SDK attempts. C03: the outer loop is now the only retry layer, its waits stop at the deadline and on Stop | Source reviewed: [OpenAI-compatible client](../tradingagents/llm_clients/openai_client.py); fixture tested ([C03 tests](../tests/test_c03_run_control.py)) | Frequency and real impact; this is not an observed average or maximum run time |
+| Gemini has an explicit 600-second request timeout. OpenAI-compatible and Anthropic models had none: LangChain passed `timeout=None`, which those SDKs read as no timeout. C03 passes 180 s to every provider | Source reviewed: [Google client](../tradingagents/llm_clients/google_client.py); offline SDK inspection ([ADR 0001](adr/0001-bounded-execution-and-run-status.md)) | Whether 180 s and 1,200 s suit real sources and other providers; deadline-miss rate |
 | Sentiment sources are fetched sequentially | Source reviewed: [sentiment analyst](../tradingagents/agents/analysts/sentiment_analyst.py) | Net benefit of bounded concurrent fetches and shared news |
 | Memory settlement participates in the initial graph barrier | Source reviewed: [graph setup](../tradingagents/graph/setup.py), [memory step](../tradingagents/graph/trading_graph.py) | Its contribution to wait time and a safe frozen-snapshot alternative |
 | Batch analysis queue is serial; direct analyses start separately | Source reviewed: [jobs](../cli/webui/jobs.py) | Throughput under actual quotas; behavior of a shared scheduler |
@@ -77,7 +79,7 @@ Targets below are proposals from the plan. A blank baseline is unknown, never ze
 | Supported or explicitly unsupported material claims | Not audited | Not audited | >=95% on initial frozen claim set; distinguish citation presence from correctness |
 | Audited material numeric errors | Not audited | Not audited | Zero; any material mismatch blocks the release candidate |
 | Material-event recall / claim accuracy | Not audited | Not audited | No more than five-percentage-point drop versus full workflow; assess uncertainty |
-| Completion / partial / failure / deadline-miss rates | All six graph attempts: 9 completed, 5 failed (two local guards, three 60-second response timeouts), 11 unstarted; deadlines unqualified | Not measured | Publish alongside latency; historical/repeated attempts are not operational rates |
+| Completion / partial / failure / deadline-miss rates | All six graph attempts: 9 completed, 5 failed (two local guards, three 60-second response timeouts), 11 unstarted; deadlines unqualified | Not measured. C03 labels each run (`complete`, `complete_with_gaps`, `partial`, `none`) with a stop reason, in its trace and `run_status.json` | Publish alongside latency; historical/repeated attempts are not operational rates |
 | Human research-task time | No participants observed | No participants observed | Pilot median improvement >=30%; >=4/5 complete each task unaided |
 
 Use at least three paired repetitions per instrument/cache regime for diagnosis, and at least 100 comparable runs per claimed mode/regime before reporting p95 as qualified. Live runs require a recorded spending cap. See [measurement rules](plan.md#measurement-and-quality-gates) for the full protocol.
@@ -92,7 +94,9 @@ Use at least three paired repetitions per instrument/cache regime for diagnosis,
 | Current report time/cost | 180-second baseline: three matched pairs, about 6-7 minutes per synthetic-source report; 11 of 206 recovery responses took over 60 seconds (maximum 125.456 s); cumulative usage reconciled | [Recovery completion](benchmarks/c01.md#recovery-completion-16-october); no speedup or cache-benefit claim |
 | Historical and transcript coverage | Incomplete/unverified | C02/C09 record source availability, knowledge times and reuse permissions |
 | Data distribution rights | No deployment-specific entitlement review performed | Check actual source agreements before hosting or redistributing data |
-| Named owners/start date | C01 owned by Codex; started 14 October 2026, completed 16 October 2026 | Product/study owners remain open; C03/C04 unassigned |
+| Named owners/start date | C01 owned by Codex; started 14 October 2026, completed 16 October 2026. C03 built in Claude Code on 17 October 2026 | Product/study owners remain open; C04 unassigned |
+| Baseline for later experiments | C03 adds three configuration keys, so C01 benchmark-runner runs now get a new configuration hash; the warm-seed check refuses C01 caches | Before the concise bull/bear experiment, register a post-C03 baseline (needs a live allowance) or compare against C01 with an explicit policy note |
+| Runs without Jev | Without `TYPESAFE_API_KEY`, every complete run reads "complete with gaps": the claim check and Jev judgments are unavailable, as approved | Owner: keep, or treat an unconfigured Jev as switched off (not a gap) |
 | Quality reference set | Not created | Freeze questions, claims, material events and held-out evaluation cases before optimization |
 | Existing API keys/services | Both keys confirmed locally; six successful probes per provider | Secrets stay in ignored env files; trace metadata excludes credentials |
 
@@ -106,7 +110,7 @@ single attempt.
 | Gate | Current verdict | Required evidence |
 | --- | --- | --- |
 | G1: reproducible baseline | Passed for the synthetic-source diagnostic baseline: three matched 180-second pairs, verified cache seeds, reconciled ledgers; the 60-second cohort stays separate | Real-source timing, UI first-useful-result and the NSE/US instrument matrix remain unmeasured; retain source-provenance limits, failures and coverage gaps |
-| G2: data and execution correctness | Not evaluated | Freshness/as-of, duplicate-request, isolation, deadline, cancel and resume cases |
+| G2: data and execution correctness | Partly evaluated: deadline, retry, Stop, partial-state and resume cases pass offline (C03) | Freshness/as-of, duplicate-request and isolation cases (C04); live confirmation of deadline and Stop behavior |
 | G3: useful speed improvement | Not evaluated | Matched latency/cost results plus coverage and quality checks |
 | G4: user value | Not evaluated | Observed task completion/time and reasons users would return |
 | G5: release or pilot readiness | Deferred | Relevant G1-G4 evidence, usable data access and a chosen release scope |
@@ -132,6 +136,8 @@ Planning completion passes none of the product gates.
 | 2026-10-16 | Verified timeout controls and reconciled all five attempts | 75 preflight tests, then 44 timeout/aggregation tests passed; Ruff passed. Today: 146 NVIDIA / 31 Jev sends. Cumulative: 294 NVIDIA / 63 Jev; Jev estimate $0.00298578, reservation $0.173408256. Local continuation ceiling exhausted; C01/G1 remain incomplete |
 | 2026-10-16 | Added seeded warm completion and per-allowance accounting | Runner `--warm-seed` refuses any hash mismatch before sending; summarizer `--select` pairs across attempts only with a matching cache hash, and `--allowance` caps each allowance separately. 57 focused tests passed; Ruff passed |
 | 2026-10-16 | Completed the 180-second baseline under a new owner-approved 144-send allowance | Seeded warm 2, cold 3 and warm 3 completed: 83 NVIDIA / 24 Jev sends, all HTTP 200. Three matched pairs; cold median 371.908 s, warm 435.775 s; no cache-speed claim. Cumulative: 377 NVIDIA / 87 Jev; Jev estimate $0.00428350, reservation $0.239468544. Full non-integration suite: 2,081 passed, 1 skipped (optional Bedrock). Zero credential matches in 827 scanned files. C01 Complete, G1 passed for diagnostic scope |
+| 2026-10-17 | C03 design approved as proposed, then built and tested offline | [ADR 0001](adr/0001-bounded-execution-and-run-status.md). 41 C03 acceptance tests passed in WSL, plus focused retry, checkpoint, graph, CLI, report and web suites (264, 129 and 101 passed). One web test is marginal against its 10 s HTTP timeout because the first request imports the openai SDK cold; it took 10.04 s at clean HEAD too. Full non-integration suite: 2,120 passed, 2 failed, 1 skipped (optional Bedrock), 1 deselected. The failures, `test_jev_sentiment.py::test_the_judgments_leave_the_analysts_own_graph_with_its_report` and `test_memory_log.py::TestLegacyRemoval::test_full_pipeline_no_regression`, are not yet investigated; likely fixtures meeting the new `run_checks` output or required-stage gate. C03 stays open until they are resolved. Ruff passed; no live calls |
+| 2026-10-19 | Branches consolidated into `main` | `feat/c01-baseline` (C01's last two commits) merged; the C03 work, uncommitted until now, committed to `main`; the merged branches deleted locally and on GitHub, so `main` is the only branch. No tests repeated for this step: the two full-suite failures recorded on 17 October are still uninvestigated and C03 stays In progress |
 
 ## Next update template
 

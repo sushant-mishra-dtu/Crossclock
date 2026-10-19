@@ -35,7 +35,8 @@ class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
         return normalize_content(super().invoke(input, config, **kwargs))
 
 
-# The read timeout the OpenAI and Anthropic SDKs use by default.
+# For a client built directly. The factory passes the research mode's attempt
+# timeout (180 s by default) to every provider, Gemini included (docs/adr/0001).
 REQUEST_TIMEOUT_SECONDS = 600
 
 
@@ -57,8 +58,7 @@ class GoogleClient(BaseLLMClient):
                     "callbacks", "http_client", "http_async_client"):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
-        # Without a timeout a stalled Gemini call waits forever; the OpenAI and
-        # Anthropic SDKs give up after the same 600 seconds (#1417).
+        # Without a timeout a stalled Gemini call waits forever (#1417).
         llm_kwargs.setdefault("timeout", REQUEST_TIMEOUT_SECONDS)
 
         # Unified api_key maps to provider-specific google_api_key

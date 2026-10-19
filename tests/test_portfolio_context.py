@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+from tests.run_states import complete_state
 from tradingagents.agents.context import get_portfolio_context_from_state
 from tradingagents.portfolio import PortfolioContext, load_portfolio
 
@@ -175,7 +176,8 @@ def test_completed_run_clears_the_checkpoint_it_wrote(tmp_path, monkeypatch):
     graph._resuming = False
     graph.propagator.get_graph_args = lambda callbacks=None: {}
     graph._log_state = lambda *a, **k: None
-    graph.graph = type("G", (), {"invoke": lambda self, i, **k: {"final_trade_decision": "Rating: Hold\n\nx", "final_rating": "Hold"}})()
+    finished = complete_state(final_trade_decision="Rating: Hold\n\nx", final_rating="Hold")
+    graph.graph = type("G", (), {"invoke": lambda self, i, **k: finished})()
     book = PortfolioContext.model_validate(HOLDING)
 
     written = graph._run_signature("stock", book)  # what begin_checkpoint keys on

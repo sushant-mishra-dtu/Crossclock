@@ -10,6 +10,7 @@ from typing import Any
 import tradingagents
 from tradingagents.agents.context import build_instrument_context, resolve_instrument_identity
 from tradingagents.agents.rating import run_rating
+from tradingagents.completion import IncompleteResearch, is_complete, run_completion
 from tradingagents.dataflows.config import run_config, run_config_context, set_config
 from tradingagents.dataflows.date_window import get_current_date, is_historical
 from tradingagents.dataflows.symbols import safe_ticker_component
@@ -17,7 +18,14 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client, tier_provider
 from tradingagents.memory import TradingMemoryLog, settlement
 from tradingagents.memory.reflection import Reflector
-from tradingagents.reporting import write_report_tree
+from tradingagents.reporting import report_dir, write_partial_report, write_report_tree
+from tradingagents.run_control import (
+    RunBudget,
+    RunControl,
+    current_control,
+    set_control,
+    use_control,
+)
 from tradingagents.telemetry import current_trace
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -43,9 +51,11 @@ def _validate_trade_date(trade_date) -> str:
 
 
 # Config keys that do not change what a run writes: where it keeps its files,
-# whether it checkpoints, and how often it retries a provider.
+# whether it checkpoints, how often it retries a provider and how long it may
+# take (a run stopped at its deadline resumes under a longer one).
 _NOT_IN_SIGNATURE = frozenset({
     "results_dir", "data_cache_dir", "memory_log_path", "checkpoint_enabled", "llm_max_retries",
+    "run_budgets", "save_partial_reports",
 })
 
 
@@ -183,7 +193,11 @@ class TradingAgentsGraph:
         """
         trade_date = _validate_trade_date(trade_date)
 
-        with run_config(self.config), \
+        # The run's budget (docs/adr/0001), unless the caller set one: a model
+        # call or retry after the deadline raises DeadlineExceeded, and the
+        # checkpoint keeps the stages already finished for a later resume.
+        control = current_control() or RunControl.from_config(self.config)
+        with run_config(self.config), use_control(control), \
                 self.checkpoint_scope(company_name, trade_date, asset_type, portfolio) as thread_id_value:
             return self._run_graph(
                 company_name, trade_date, asset_type=asset_type,
@@ -275,26 +289,39 @@ class TradingAgentsGraph:
             "tool_vendors": dict(cfg.get("tool_vendors") or {}),
         }
 
-    def save_reports(self, final_state, ticker, save_path=None, html=True) -> Path:
+    def save_reports(self, final_state, ticker, save_path=None, html=True, completion=None) -> Path:
         """Write the report tree for a completed run, like the CLI does.
 
         Programmatic callers get the same on-disk reports the CLI produces. Pass
         an explicit ``save_path`` or let it default under ``results_dir``; the
         report is also written as one HTML page unless ``html`` is False.
+        ``completion`` adds the run-status line and ``run_status.json``.
         """
         if save_path is None:
             save_path = self.default_report_path(ticker)
         trace = current_trace()
         with trace.scope("persistence", "report_tree") if trace else nullcontext():
-            path = write_report_tree(final_state, ticker, save_path, settings=self.run_settings(), html=html)
+            path = write_report_tree(final_state, ticker, save_path, settings=self.run_settings(), html=html,
+                                     completion=completion)
         if trace:
             trace.milestone("persisted_report")
         return path
 
+    def save_partial_report(self, final_state, ticker, completion, save_path=None, html=True) -> Path:
+        """Write what an interrupted run finished as a partial report (never a complete one)."""
+        if save_path is None:
+            save_path = report_dir(self.config["results_dir"], ticker, "_partial")
+        trace = current_trace()
+        with trace.scope("persistence", "partial_report") if trace else nullcontext():
+            path = write_partial_report(final_state, ticker, save_path, completion,
+                                        settings=self.run_settings(), html=html)
+        if trace:
+            trace.milestone("persisted_partial_report")
+        return path
+
     def default_report_path(self, ticker) -> Path:
         """Where a run's reports go unless told otherwise: under results_dir, stamped now."""
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return Path(self.config["results_dir"]) / "reports" / f"{safe_ticker_component(ticker)}_{stamp}"
+        return report_dir(self.config["results_dir"], ticker)
 
     def create_run_state(self, company_name, trade_date, asset_type: str = "stock", portfolio=None):
         """Build a run's initial state; propagate() and the CLI both start here.
@@ -405,12 +432,25 @@ class TradingAgentsGraph:
         else:
             final_state = self.graph.invoke(graph_input, **args)
 
+        # A graph that finished with a required stage empty (a model that answered
+        # nothing) is not a decision: nothing is recorded, and the checkpoint goes
+        # so that running it again starts fresh instead of resuming the same end.
+        completion = self.completion(final_state)
+        if not is_complete(completion):
+            self.clear_checkpoint_on_success(company_name, trade_date, asset_type, portfolio)
+            raise IncompleteResearch(completion)
+
         self.record_decision(company_name, trade_date, final_state)
 
         # Clear checkpoint on successful completion to avoid stale state.
         self.clear_checkpoint_on_success(company_name, trade_date, asset_type, portfolio)
 
         return final_state, run_rating(final_state)
+
+    def completion(self, final_state, **kwargs) -> dict:
+        """This run's completion record (``tradingagents.completion.run_completion``)."""
+        return run_completion(final_state, self.selected_analysts,
+                              deadline_seconds=RunBudget.from_config(self.config).deadline_seconds, **kwargs)
 
     def stream_run(self, graph_input, **args):
         """Stream a run as ``(messages, state)`` pairs.
@@ -428,9 +468,16 @@ class TradingAgentsGraph:
         # when the process-wide config has changed since. Each step runs in the
         # run's context, so the caller keeps its own between steps.
         context = run_config_context(self.config)
+        # The run's budget: the caller's RunControl (the web job's, with its Stop),
+        # else one from this graph's config. Checked after every step as well.
+        control = context.run(current_control)
+        if control is None:
+            control = RunControl.from_config(self.config)
+            context.run(set_control, control)
         stream = context.run(self.graph.stream, graph_input, subgraphs=True, **args)
         try:
             while (step := context.run(next, stream, None)) is not None:
+                control.check()
                 namespace, mode, chunk = step
                 if namespace:
                     result = chunk.get("result") if mode == "tasks" else None

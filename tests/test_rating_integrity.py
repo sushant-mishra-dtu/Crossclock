@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 import cli.run as cli_run
+from tests.run_states import complete_state
 from tradingagents.agents.rating import RATING_REVIEW, extract_rating, parse_rating
 
 INVERTED = ("The aggressive analyst pushed hard for a Buy on the AI backlog, but the "
@@ -170,7 +171,7 @@ def test_the_cli_says_when_a_run_produced_no_usable_rating(monkeypatch, tmp_path
             pass
 
         def stream_run(self, *a, **k):
-            yield [], {"messages": [], "final_trade_decision": REFUSAL, "final_rating": RATING_REVIEW}
+            yield [], {"messages": [], **complete_state(final_trade_decision=REFUSAL, final_rating=RATING_REVIEW)}
 
     fake = _Graph()
     fake.graph = fake

@@ -22,6 +22,7 @@ from tradingagents.agents import (
 )
 from tradingagents.agents.analysts.turn import WRAP_UP
 from tradingagents.agents.state import AgentState
+from tradingagents.run_control import recording_checks
 
 from .analyst_execution import build_analyst_execution_plan
 from .conditional_logic import ConditionalLogic
@@ -64,6 +65,7 @@ def _analyst_graph(spec, agent, max_tool_rounds: int):
     output = TypedDict(f"{spec.key.capitalize()}Report",
                        {spec.report_key: str, **{key: hints[key] for key in spec.extra_outputs}})
     graph = StateGraph(AgentState, output_schema=output)
+    agent = recording_checks(agent)
     graph.add_node("agent", agent)
     graph.add_edge(START, "agent")
     if not spec.tools:
@@ -154,14 +156,16 @@ class GraphSetup:
             workflow.add_node(spec.agent_node,
                               _analyst_graph(spec, analyst_factories[spec.key](), self.max_tool_rounds))
 
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
+        # Optional checks a node runs (Jev judgments, the claim check) reach the
+        # state as run_checks, so a report can name the ones that did not run.
+        workflow.add_node("Bull Researcher", recording_checks(bull_researcher_node))
+        workflow.add_node("Bear Researcher", recording_checks(bear_researcher_node))
+        workflow.add_node("Research Manager", recording_checks(research_manager_node))
         workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        workflow.add_node("Aggressive Analyst", recording_checks(aggressive_analyst))
+        workflow.add_node("Neutral Analyst", recording_checks(neutral_analyst))
+        workflow.add_node("Conservative Analyst", recording_checks(conservative_analyst))
+        workflow.add_node("Portfolio Manager", recording_checks(portfolio_manager_node))
 
         # The analysts work at the same time; the research debate starts once
         # every one of them has filed its report. The memory log settles past

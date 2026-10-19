@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -12,11 +13,13 @@ import openai
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
+from tradingagents.run_control import RunInterrupted, capped_schedule, current_control
 from tradingagents.telemetry import current_trace
 
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
 from .capabilities import get_capabilities
+from .errors import provider_error_class, retry_after_seconds
 from .telemetry import (
     observe_sdk_transport,
     observed_async_generation,
@@ -27,21 +30,24 @@ from .validators import validate_model
 
 logger = logging.getLogger(__name__)
 
-# The SDK's own retries (max_retries, default 2) back off for at most a few
-# seconds, which is too short for shared/trial endpoints such as NVIDIA NIM:
-# they return bursts of HTTP 500 mid-run that clear after tens of seconds. One
-# such burst used to abort a whole multi-agent analysis, so transient server
-# errors get a second, slower retry layer on top of the SDK's.
+# Shared/trial endpoints such as NVIDIA NIM return bursts of HTTP 500 mid-run
+# that clear after tens of seconds, which the SDK's own few-second retries do
+# not ride out; one such burst used to abort a whole multi-agent analysis. So
+# this loop retries transient errors on a slower schedule, and it is the only
+# retry layer: the SDK is built with max_retries=0, so every attempt and wait is
+# counted against the run's deadline and ends at once on Stop (docs/adr/0001).
 _TRANSIENT_ERRORS = (
     openai.InternalServerError,   # 5xx (langchain's OpenAIAPIError subclasses it)
     openai.APIConnectionError,    # connection drops and timeouts
     openai.RateLimitError,
 )
+# The waits outside a run; a run's research mode sets its own (run_budgets).
 _TRANSIENT_BACKOFF_SECONDS = (10, 20, 40, 60, 60)
+_MAX_RETRY_AFTER_SECONDS = 120
 
-# Set by whoever runs the graph and may stop it (the web UI's analysis job). LangGraph
-# copies the context into its pool threads, so the retry wait below sees it: a stop
-# ends the wait at once and the provider's error surfaces instead of another attempt.
+# For callers that drive a model outside a RunControl but may stop it (the C01
+# benchmark runner): a set event ends a retry wait at once and the provider's
+# error surfaces instead of another attempt. A RunControl takes precedence.
 cancel_event: ContextVar[threading.Event | None] = ContextVar("llm_cancel_event", default=None)
 
 
@@ -52,6 +58,12 @@ def _wait_or_cancelled(delay: float) -> bool:
         time.sleep(delay)
         return False
     return event.wait(delay)
+
+
+def _retry_delay(exc: Exception, scheduled: float, max_retry_after: float) -> float:
+    """The scheduled wait, or longer when the provider asked for it (up to a cap)."""
+    asked = retry_after_seconds(exc)
+    return scheduled if asked is None else max(scheduled, min(asked, max_retry_after))
 
 
 class NormalizedChatOpenAI(ChatOpenAI):
@@ -78,30 +90,56 @@ class NormalizedChatOpenAI(ChatOpenAI):
 
     @observed_invocation
     def invoke(self, input, config=None, **kwargs):
-        for attempt, delay in enumerate((*_TRANSIENT_BACKOFF_SECONDS, None), start=1):
+        control = current_control()
+        if control is not None:
+            schedule = control.budget.retry_backoff_seconds
+            max_retry_after = control.budget.max_retry_after_seconds
+        else:
+            schedule, max_retry_after = _TRANSIENT_BACKOFF_SECONDS, _MAX_RETRY_AFTER_SECONDS
+        # llm_max_retries, when configured, caps this loop (the SDK makes none).
+        schedule = capped_schedule(schedule, getattr(self, "_retry_limit", None))
+        provider = getattr(self, "_telemetry_provider", "openai")
+        waited = 0.0
+        for attempt, scheduled in enumerate((*schedule, None), start=1):
+            if control is not None:
+                control.check()
             try:
                 return normalize_content(super().invoke(input, config, **kwargs))
             except _TRANSIENT_ERRORS as exc:
-                if delay is None:
+                failure = {"provider": provider, "model": self.model_name,
+                           "error_class": provider_error_class(exc) or "server",
+                           "attempts": attempt, "waited_seconds": round(waited, 3)}
+                if scheduled is None:
+                    if control is not None:
+                        control.note_provider_failure(failure)
                     raise
+                delay = _retry_delay(exc, scheduled, max_retry_after)
                 logger.warning(
                     "%s: transient provider error (%s); retrying in %ds (attempt %d/%d)",
-                    self.model_name, exc, delay, attempt, len(_TRANSIENT_BACKOFF_SECONDS),
+                    self.model_name, failure["error_class"], delay, attempt, len(schedule),
                 )
                 trace = current_trace()
-                if trace is None:
-                    cancelled = _wait_or_cancelled(delay)
-                else:
-                    with trace.scope("retry_wait", "openai_outer_retry", {
-                        "provider": getattr(self, "_telemetry_provider", "openai"),
-                        "model": self.model_name, "attempt": attempt,
+                span = None
+                if trace is not None:
+                    span = trace.start_span("retry_wait", "openai_outer_retry", {
+                        "provider": provider, "model": self.model_name, "attempt": attempt,
                         "delay_seconds": delay,
-                    }) as span:
+                    })
+                try:
+                    if control is not None:
+                        control.wait_before_retry(delay, failure)
+                        cancelled = False
+                    else:
                         cancelled = _wait_or_cancelled(delay)
-                        if cancelled:
-                            trace.end_span(span, "cancelled")
+                except RunInterrupted as stop:
+                    if trace is not None:
+                        trace.end_span(span, "cancelled", {"reason": stop.reason})
+                    raise stop from exc
+                if trace is not None:
+                    trace.end_span(span, "cancelled" if cancelled else "ok")
                 if cancelled:
                     raise
+                waited += delay
 
     def with_structured_output(self, schema, *, method=None, **kwargs):
         caps = get_capabilities(self.model_name)
@@ -398,8 +436,16 @@ class OpenAIClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
+        # The invoke loop owns retries (and llm_max_retries caps it); SDK retries
+        # would sleep where Stop and the deadline cannot reach them.
+        retry_limit = llm_kwargs.pop("max_retries", None)
+        llm_kwargs["max_retries"] = 0
+
         # The subclass (provider quirks) comes from the registry spec.
-        return observe_sdk_transport(chat_cls(**llm_kwargs), self.provider)
+        llm = observe_sdk_transport(chat_cls(**llm_kwargs), self.provider)
+        with contextlib.suppress(AttributeError, TypeError):
+            object.__setattr__(llm, "_retry_limit", retry_limit)
+        return llm
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""

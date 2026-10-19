@@ -154,7 +154,7 @@ Day numbers are relative working days, not calendar deadlines. Estimates assume 
 | --- | --- | --- | --- |
 | C01 | Days 1-3 | Instrumentation and reproducible baseline | Trace queue, graph nodes, retrieval, model/Jev calls, retries, cache hits and persistence; publish workload/configuration and cold/warm results |
 | C02 | Days 1-3, alongside C01 | User-task study brief and data-access inventory | Prototype tasks, recruitment plan, initial interviews if available, target cohort and feed/storage/display constraints recorded; distinguish responses from assumptions |
-| C03 | Days 3-5, after C01 | Bounded execution and truthful run status | Deadline/retry/cancel tests pass; partial work is retained; provider failure cannot appear as successful complete research |
+| C03 | Days 3-5, after C01 | Bounded execution and truthful run status ([design](adr/0001-bounded-execution-and-run-status.md)) | Deadline/retry/cancel tests pass; partial work is retained; provider failure cannot appear as successful complete research |
 | C04 | Days 4-8, after C01 | Shared evidence slice for one ticker's price/news/financials | Concurrent duplicate requests fetch once; freshness/as-of/isolation cases pass; measured request reduction without coverage loss |
 | C05 | Days 5-9, after C04 schema | Brief and evidence drawer for existing reports | A user can inspect sources, dates, units and gaps; partial/unchecked states remain visible; keyboard/mobile walkthrough recorded |
 | C06 | Days 8-10 as stretch, otherwise next sprint | Quick/Standard/Deep controls and first Quick path | Mode-specific scope/cost/deadline preserved; Quick cannot be mistaken for a validated full decision; provisional target results reported honestly |

@@ -1,6 +1,8 @@
 
 from typing import Any
 
+from tradingagents.run_control import attempt_timeout_seconds
+
 from .base_client import BaseLLMClient
 
 
@@ -120,6 +122,11 @@ def build_llm_kwargs(config: dict) -> dict[str, Any]:
     if max_retries is not None and max_retries != "":
         kwargs["max_retries"] = _coerce_max_retries(max_retries)
 
+    # Every provider gets the research mode's attempt timeout. Without one,
+    # LangChain passes timeout=None, which the OpenAI and Anthropic SDKs read as
+    # no timeout at all: a stalled request waited for ever (docs/adr/0001).
+    kwargs["timeout"] = attempt_timeout_seconds(config)
+
     # Output-token cap is cross-provider, but Gemini names it
     # ``max_output_tokens``; forward under the right key when set (#1204).
     max_tokens = config.get("max_tokens")
@@ -147,6 +154,7 @@ def create_tier_client(config: dict, tier: str, **extra) -> BaseLLMClient:
         base_url = config.get(f"{tier}_think_backend_url") or config.get("backend_url")
     else:
         base_url = config.get(f"{tier}_think_backend_url")
-    kwargs = build_llm_kwargs({**config, "llm_provider": provider})
+    # A caller's own client settings (a benchmark's timeout, say) win over the config's.
+    kwargs = {**build_llm_kwargs({**config, "llm_provider": provider}), **extra}
     return create_llm_client(provider=provider, model=config[f"{tier}_think_llm"], base_url=base_url,
-                             **kwargs, **extra)
+                             **kwargs)

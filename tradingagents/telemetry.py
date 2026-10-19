@@ -34,6 +34,7 @@ _ATTRIBUTES = frozenset({
     "parent_callback_run_id", "method", "status", "count", "coalesced", "case",
     "regime", "repetition", "fixture", "supported", "reason", "billable_input_tokens",
     "cost_usd", "estimated_cost_usd", "pricing_version", "currency", "max_calls", "finish_reason",
+    "mode", "deadline_seconds", "attempt_timeout_seconds",
 })
 _CONFIG_KEYS = frozenset({
     "llm_provider", "deep_think_provider", "quick_think_provider", "deep_think_llm",
@@ -42,7 +43,7 @@ _CONFIG_KEYS = frozenset({
     "jev_enabled", "checkpoint_enabled", "openai_reasoning_effort", "anthropic_effort",
     "google_thinking_level", "max_output_tokens", "max_tokens", "temperature", "data_vendors",
     "tool_vendors", "version", "mode", "measurement_kind", "spending_cap_usd",
-    "jev_model", "jev_claim_check", "source_revision",
+    "jev_model", "jev_claim_check", "source_revision", "research_mode",
 })
 _WORKLOAD_KEYS = frozenset({
     "ticker", "symbol", "symbols", "trade_date", "asset_type", "analysts", "case",
