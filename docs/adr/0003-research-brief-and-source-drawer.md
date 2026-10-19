@@ -1,8 +1,10 @@
 # ADR 0003: Research brief and source drawer (C05)
 
-Status: **Proposed** on 19 October 2026 (Asia/Calcutta), for the owner to
-approve or change before any code is written, as C03's design was
-([ADR 0001](0001-bounded-execution-and-run-status.md)). Task: C05 in the
+Status: **Accepted** by the owner as proposed on 19 October 2026
+(Asia/Calcutta), before any code was written, as C03's design was
+([ADR 0001](0001-bounded-execution-and-run-status.md)): statement links in code
+only, no brief fields the run does not produce, source texts kept locally and out
+of downloads, and currency "not recorded" unless a source states it. Task: C05 in the
 [plan](../plan.md) and [progress tracker](../progress.md). It builds on C04's
 evidence records ([ADR 0002](0002-shared-evidence-and-bounded-retrieval.md)).
 Evidence class: source reviewed. No provider or data vendor was called, and no
