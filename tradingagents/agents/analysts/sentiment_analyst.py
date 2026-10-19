@@ -48,6 +48,7 @@ from tradingagents.agents.structured import (
     invoke_structured_or_freetext,
 )
 from tradingagents.agents.tools import get_news
+from tradingagents.dataflows import provenance
 from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.feed import Feed
 from tradingagents.dataflows.router import route_to_vendor
@@ -130,7 +131,10 @@ def create_sentiment_analyst(llm):
             # Pre-fetch all three sources. Each fetcher degrades gracefully and
             # returns a string (no exceptions surface from here), so the LLM
             # always sees something — either real data or a clear placeholder.
-            news_block = get_news.func(ticker, start_date, end_date)
+            window = {"ticker": ticker, "start_date": start_date, "end_date": end_date}
+            with provenance.capturing() as acquired:
+                news_block = get_news.func(ticker, start_date, end_date)
+            provenance.read("get_news", window, news_block, acquired)
             # Without the jev extra, a TypeSafe key still screens the social
             # posts (post_screen); jev_enabled False turns that off too.
             screen = jev_screen(ticker) if get_config().get("jev_enabled", True) else None
@@ -139,9 +143,12 @@ def create_sentiment_analyst(llm):
             stocktwits_block = fetch_stocktwits_messages(
                 ticker, limit=30, start_date=start_date, end_date=end_date, screen=screen
             )
+            provenance.read("stocktwits_messages", window, stocktwits_block, source="stocktwits")
             reddit_block = fetch_reddit_posts(
                 ticker, subreddits, start_date=start_date, end_date=end_date, screen=screen
             )
+            provenance.read("reddit_posts", {**window, "subreddits": list(subreddits)}, reddit_block,
+                            source="reddit")
         else:
             with client:
                 feeds = _fetch_feeds(ticker, start_date, end_date, subreddits)
@@ -189,19 +196,21 @@ def _narrative_text(narrative: SentimentNarrative) -> str:
 def _fetch_feeds(
     ticker: str, start_date: str, end_date: str, subreddits: tuple[str, ...] = DEFAULT_SUBREDDITS,
 ) -> dict[str, Feed]:
-    """The three sources as items, each also holding its legacy prompt block."""
-    news = route_to_vendor("get_news_feed", ticker, start_date, end_date)
+    """The three sources as items, each also holding its legacy prompt block.
+
+    Each is recorded as a read of the running analyst (docs/adr/0003).
+    """
+    window = {"ticker": ticker, "start_date": start_date, "end_date": end_date}
+    with provenance.capturing() as acquired:
+        news = route_to_vendor("get_news_feed", ticker, start_date, end_date)
     if isinstance(news, str):  # the router's sentinel when no vendor could serve it
         news = Feed(news, unavailable=True)
-    return {
-        "news": news,
-        "stocktwits": fetch_stocktwits_feed(
-            ticker, limit=30, start_date=start_date, end_date=end_date
-        ),
-        "reddit": fetch_reddit_feed(
-            ticker, subreddits, start_date=start_date, end_date=end_date
-        ),
-    }
+    provenance.read("get_news", window, news, acquired)
+    stocktwits = fetch_stocktwits_feed(ticker, limit=30, start_date=start_date, end_date=end_date)
+    provenance.read("stocktwits_messages", window, stocktwits, source="stocktwits")
+    reddit = fetch_reddit_feed(ticker, subreddits, start_date=start_date, end_date=end_date)
+    provenance.read("reddit_posts", {**window, "subreddits": list(subreddits)}, reddit, source="reddit")
+    return {"news": news, "stocktwits": stocktwits, "reddit": reddit}
 
 
 def _judge(client, feeds: dict[str, Feed], ticker: str):

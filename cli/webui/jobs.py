@@ -705,7 +705,10 @@ def load_report_sections(report: SavedReport) -> list[tuple[str, str]]:
     if report.kind in ("report", "partial"):
         text = report.path.read_text(encoding="utf-8")
         heads = list(_SECTION_RE.finditer(text))
-        ends = [h.start() for h in heads[1:]] + [len(text)]
+        # A section ends at the next level-2 heading of any kind, so the Sources
+        # appendix after section V (docs/adr/0003) is never read as part of it.
+        starts = [m.start() for m in re.finditer(r"^## ", text, re.MULTILINE)]
+        ends = [min((s for s in starts if s > h.start()), default=len(text)) for h in heads]
         return [(h.group(1).strip(), text[h.end():end].strip())
                 for h, end in zip(heads, ends, strict=True)]
     state = json.loads(report.path.read_text(encoding="utf-8"))

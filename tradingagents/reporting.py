@@ -7,11 +7,14 @@ run produces the same on-disk report tree a CLI run does.
 """
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
+from tradingagents.agents.context import resolved_identity
 from tradingagents.agents.rating import run_rating
 from tradingagents.completion import is_complete, status_line
+from tradingagents.dataflows.provenance import ordered_entries, store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 
 
@@ -96,6 +99,68 @@ def _report_parts(final_state: dict) -> list[tuple[str, str, list[tuple[str, str
     return parts
 
 
+def _cell(value) -> str:
+    return str(value if value not in (None, "") else "").replace("|", "\\|").replace("\n", " ")
+
+
+def _answered(entry: dict) -> list[dict]:
+    return [a for a in entry.get("acquisitions") or () if a.get("outcome") == "ok"]
+
+
+def sources_markdown(entries: list[dict]) -> str:
+    """The report's Sources appendix: what each analyst read, never the texts (docs/adr/0003)."""
+    lines = [
+        "## Sources", "",
+        "What each analyst read for this report, in the order it read them. The texts "
+        "stay with the saved report on this computer; this list only names them.", "",
+        "| ID | Analyst | Tool | Source | Window | As of | Fetched (UTC) | Coverage |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    links = []
+    for e in entries:
+        answered = _answered(e)
+        first = answered[0] if answered else {}
+        sources = ", ".join(dict.fromkeys(a["source"] for a in answered)) or "not recorded"
+        start, end = first.get("window_start"), first.get("window_end")
+        window = f"{start} to {end}" if start and end else (start or end or "")
+        fetched = (first.get("fetched_at") or "")[:19].replace("T", " ")
+        lines.append("| " + " | ".join(_cell(v) for v in (
+            e["id"], e.get("analyst"), e.get("tool"), sources, window, first.get("as_of"), fetched,
+            e.get("coverage"))) + " |")
+        for a in answered:
+            for item in a.get("items") or ():
+                if item.get("url"):
+                    published = item.get("published_at") or "publication time unknown"
+                    links.append(f"- {e['id']}: [{_cell(item.get('title') or item['url'])}]({item['url']}) "
+                                 f"({_cell(item.get('publisher'))}, {published})")
+    if links:
+        lines += ["", "Articles linked from these sources:", "", *dict.fromkeys(links)]
+    return "\n".join(lines)
+
+
+def _instrument(final_state: dict) -> dict:
+    return {"ticker": final_state.get("company_of_interest"), "trade_date": final_state.get("trade_date"),
+            "asset_type": final_state.get("asset_type"),
+            **resolved_identity(final_state.get("instrument_context") or "")}
+
+
+def _write_evidence(final_state: dict, save_path: Path) -> list[dict] | None:
+    """``evidence.json`` beside the report; None for a state saved before C05 recorded reads."""
+    if "evidence" not in final_state:
+        return None
+    entries = ordered_entries(final_state.get("evidence"))
+    store = store_dir()
+    if store is not None:
+        try:
+            store = Path(os.path.relpath(store, save_path)).as_posix()
+        except ValueError:      # another drive on Windows
+            store = str(store)
+    (save_path / "evidence.json").write_text(json.dumps(
+        {"schema": 1, "store": store, "instrument": _instrument(final_state), "entries": entries},
+        indent=2, ensure_ascii=False), encoding="utf-8")
+    return entries
+
+
 def report_dir(results_dir, ticker: str, suffix: str = "") -> Path:
     """Where a run's report tree goes under ``results_dir``, stamped now."""
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -122,14 +187,22 @@ def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool,
 
     if completion is not None:
         (save_path / "run_status.json").write_text(json.dumps(completion, indent=2), encoding="utf-8")
+    # What the analysts read, and the claim check as data, for the brief (docs/adr/0003).
+    entries = _write_evidence(final_state, save_path)
+    if final_state.get("claim_check") is not None:
+        (save_path / "claim_check.json").write_text(
+            json.dumps(final_state["claim_check"], indent=2, ensure_ascii=False), encoding="utf-8")
+    sources = sources_markdown(entries) if entries is not None else None
     (save_path / f"{name}.md").write_text(
-        _header(ticker, final_state, settings, completion) + "\n\n".join(sections), encoding="utf-8"
+        _header(ticker, final_state, settings, completion) + "\n\n".join(sections)
+        + (f"\n\n{sources}\n" if sources else ""), encoding="utf-8"
     )
     if html:
         from tradingagents.report_html import render_report
 
         (save_path / f"{name}.html").write_text(
-            render_report(ticker, final_state, settings, parts, completion=completion), encoding="utf-8"
+            render_report(ticker, final_state, settings, parts, completion=completion, sources=sources),
+            encoding="utf-8",
         )
     return save_path / f"{name}.md"
 

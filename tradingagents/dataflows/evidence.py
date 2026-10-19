@@ -167,17 +167,22 @@ def _request_date(request, *keys):
     return None
 
 
+def request_window(request) -> tuple[str | None, str | None, str | None]:
+    """(window start, window end, as-of date) a request states, each None when it states none."""
+    return (_request_date(request, "start_date", "window_start"),
+            _request_date(request, "end_date", "window_end"),
+            _request_date(request, "as_of", "as_of_date", "curr_date", "trade_date"))
+
+
 def _record(source, operation, request_sha256, request, value):
     instrument = next((request.get(key) for key in ("instrument", "symbol", "ticker")
                        if isinstance(request.get(key), str)
                        and _INSTRUMENT.fullmatch(request[key])), None)
+    window_start, window_end, as_of = request_window(request)
     return EvidenceRecord(
         source=source, operation=operation, request_sha256=request_sha256,
         content_sha256=_sha256(value), fetched_at=datetime.now(UTC).isoformat(),
-        instrument=instrument,
-        window_start=_request_date(request, "start_date", "window_start"),
-        window_end=_request_date(request, "end_date", "window_end"),
-        as_of=_request_date(request, "as_of", "as_of_date", "curr_date", "trade_date"),
+        instrument=instrument, window_start=window_start, window_end=window_end, as_of=as_of,
     )
 
 
@@ -219,6 +224,14 @@ class EvidenceSession:
         """Immutable metadata for successful results currently retained in the LRU."""
         with self._lock:
             return tuple(entry.record for entry in self._cache.values())
+
+    def record_for(self, source: str, operation: str, request: dict, *,
+                   category: str) -> EvidenceRecord | None:
+        """The retained record for a request, giving when its answer was really fetched."""
+        key = (source, operation, category, _sha256(deepcopy(request)))
+        with self._lock:
+            cached = self._cache.get(key)
+            return None if cached is None else cached.record
 
     def fetch(self, source: str, operation: str, request: dict,
               loader: Callable, *, category: str):

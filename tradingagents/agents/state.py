@@ -3,6 +3,7 @@ from typing import Annotated
 from langgraph.graph import MessagesState
 from typing_extensions import TypedDict
 
+from tradingagents.dataflows.provenance import merge_evidence
 from tradingagents.run_control import merge_checks
 
 
@@ -88,4 +89,8 @@ class AgentState(MessagesState):
     # disabled, unavailable or skipped. Kept in the state so a resumed run still
     # knows what the stages it reuses checked.
     run_checks: Annotated[dict, merge_checks]
+    # What each analyst read, keyed by analyst and position (docs/adr/0003); kept
+    # in the state for the same reason, so a resumed run keeps its sources.
+    evidence: Annotated[dict, merge_evidence]
+    claim_check: Annotated[dict, "The Portfolio Manager's claim check as data, for the brief"]
     portfolio_context: Annotated[str, "Caller-supplied holdings and cash, rendered at run start; empty when not provided"]
