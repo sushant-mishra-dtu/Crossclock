@@ -114,6 +114,10 @@ def test_news_read_by_two_analysts_is_stored_once(tmp_path, monkeypatch):
     news = [e for e in entries if e["tool"] == "get_news"]
     assert [e["analyst"] for e in news] == ["Sentiment Analyst", "News Analyst"]
     assert news[0]["content_sha256"] == news[1]["content_sha256"]
+    # One acquisition served both: the second read keeps the time it was really fetched.
+    [first], [second] = news[0]["acquisitions"], news[1]["acquisitions"]
+    assert first["fetched_at"] == second["fetched_at"]
+    assert first["request_sha256"] == second["request_sha256"]
     stored = sorted(p.stem for p in _store(tmp_path).glob("*.txt"))
     assert stored == sorted({e["content_sha256"] for e in entries})
 

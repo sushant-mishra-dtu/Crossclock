@@ -19,7 +19,7 @@ from tests.test_graph_end_to_end import (
 )
 from tradingagents import brief
 from tradingagents.completion import run_completion
-from tradingagents.dataflows import router
+from tradingagents.dataflows import provenance, router
 from tradingagents.dataflows.errors import VendorUnavailableError
 from tradingagents.dataflows.feed import Feed, FeedItem
 from tradingagents.reporting import write_partial_report, write_report_tree
@@ -258,6 +258,8 @@ def test_drawer_entries_name_who_else_read_them_and_serve_only_verified_listed_t
     sha = news[0]["content_sha256"]
     assert brief.source_text(folder, sha, results_root=root) == "get_news_feed data"
     assert brief.source_text(folder, "f" * 64, results_root=root) is None        # not in this report
+    other = provenance.store_text("Another report's source.", root / "evidence")
+    assert brief.source_text(folder, other, results_root=root) is None          # stored, but not listed here
     assert brief.source_text(folder, "../../x", results_root=root) is None
     (root / "evidence" / f"{sha}.txt").write_text("changed", encoding="utf-8")
     assert brief.source_text(folder, sha, results_root=root) is None            # no longer its hash
