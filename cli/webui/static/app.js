@@ -2786,16 +2786,17 @@ function briefView(b) {
 
   if (b.coverage.length) {
     // One header row per analyst, and coverage beside the ID, so a gap shows without scrolling sideways.
-    const rows = b.coverage.map((g) => `<tr class="bf-group"><th scope="colgroup" colspan="6">${esc(g.analyst)}</th></tr>`
+    // One row group per analyst, its name heading the group.
+    const rows = b.coverage.map((g) => `<tbody><tr class="bf-group"><th scope="rowgroup" colspan="6">${esc(g.analyst)}</th></tr>`
       + g.entries.map((e) => `<tr><td>${sourceButton([e.id], e.id, { mono: true })}</td>
       <td>${wordPill(COVERAGE_WORDS[e.coverage] || [e.coverage, 'pill-plain'])}</td><td class="mono">${esc(e.tool).replace(/_/g, '_<wbr>')}</td>
       <td>${esc(e.sources.join(', ') || 'not recorded')}</td>
       <td class="nowrap">${esc(e.window || '')}${e.asOf ? `${e.window ? '<br>' : ''}as of ${esc(e.asOf)}` : ''}</td>
-      <td class="nowrap">${whenHtml(e.fetchedAt, 'not recorded', true)}</td></tr>`).join('')).join('');
+      <td class="nowrap">${whenHtml(e.fetchedAt, 'not recorded', true)}</td></tr>`).join('') + '</tbody>').join('');
     parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-cov-h"><h3 id="bf-cov-h" class="bf-h">Data coverage</h3>
       <div class="table-scroll"><table class="tbl compact"><caption class="sr">What each analyst read, with its coverage, tool, vendor, window and fetch time</caption>
       <thead><tr><th scope="col">Source</th><th scope="col">Coverage</th><th scope="col">Tool</th><th scope="col">Vendor</th><th scope="col">Window</th><th scope="col">Fetched</th></tr></thead>
-      <tbody>${rows}</tbody></table></div></section>`);
+      ${rows}</table></div></section>`);
   }
 
   parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-miss-h"><h3 id="bf-miss-h" class="bf-h">Missing inputs</h3>
@@ -2941,7 +2942,16 @@ PAGES['/reports'] = {
       if (!reports.brief || reports.brief.id !== d.id) reports.brief = { id: d.id, data: await api('/report/brief?id=' + encodeURIComponent(d.id)) };
       view = `<div class="well-box report-body">${briefView(reports.brief.data)}</div>`;
     } else if (cur) {
-      view = `<div class="well-box report-body"><h3 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em;">${esc(cur.title)}</h3>${md(cur.body)}</div>`;
+      // Section I names what each analyst read; each button opens the drawer (docs/adr/0003).
+      let read = '';
+      if (d.hasBrief && cur.title.startsWith('I.')) {
+        if (!reports.brief || reports.brief.id !== d.id) reports.brief = { id: d.id, data: await api('/report/brief?id=' + encodeURIComponent(d.id)) };
+        const groups = reports.brief.data.coverage;
+        if (groups.length) {
+          read = `<div class="row" style="gap: 8px; flex-wrap: wrap; align-items: center;" role="group" aria-label="What each analyst read"><span class="hint">What each analyst read:</span>${groups.map((g) => sourceButton(g.entries.map((e) => e.id), `${g.analyst} sources (${g.entries.length})`)).join('')}</div>`;
+        }
+      }
+      view = `<div class="well-box report-body"><h3 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em;">${esc(cur.title)}</h3>${read}${md(cur.body)}</div>`;
     }
     const c = d.completion;
     const runLine = !c ? '' : c.state === 'complete' ? 'Run complete'
