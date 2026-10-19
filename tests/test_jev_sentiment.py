@@ -188,11 +188,12 @@ class TestFeeds:
         feed = alpha_vantage_news.get_news_feed("NVDA", "2026-09-10", "2026-09-17")
         assert feed.text == raw
         assert feed.items == (FeedItem(
-            "news", "Record quarter", title="Nvidia beats", published="2026-09-15", author="Reuters"),)
+            "news", "Record quarter", title="Nvidia beats", published="2026-09-15", author="Reuters",
+            published_at="2026-09-15T12:30:00+00:00"),)
 
     def test_alpha_vantage_non_feed_body_has_no_items(self, monkeypatch):
         monkeypatch.setattr(alpha_vantage_news, "get_news", lambda *a: "not json")
-        assert alpha_vantage_news.get_news_feed("NVDA", "a", "b") == Feed("not json")
+        assert alpha_vantage_news.get_news_feed("NVDA", "a", "b") == Feed("not json", unavailable=True)
 
     def test_news_feed_follows_the_get_news_vendor_override(self):
         from tradingagents.dataflows.config import set_config

@@ -1,4 +1,5 @@
 import logging
+from inspect import signature
 
 from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.errors import (
@@ -6,6 +7,9 @@ from tradingagents.dataflows.errors import (
     VendorNotConfiguredError,
     VendorUnavailableError,
 )
+from tradingagents.dataflows.evidence import current_evidence
+from tradingagents.dataflows.feed import Feed
+from tradingagents.dataflows.symbols import normalize_symbol
 from tradingagents.dataflows.vendors.alpha_vantage import (
     get_balance_sheet as get_alpha_vantage_balance_sheet,
     get_cashflow as get_alpha_vantage_cashflow,
@@ -217,7 +221,55 @@ def no_data_available(error: NoMarketDataError) -> str:
     )
 
 
+_SHARED_METHODS = frozenset({
+    "get_stock_data", "get_news", "get_news_feed", "get_fundamentals",
+    "get_balance_sheet", "get_cashflow", "get_income_statement",
+})
+
+
 def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
+    """Reuse eligible exact source views only inside the current research run."""
+    session = current_evidence()
+    if session is None or method not in _SHARED_METHODS:
+        return _fetch_source(impl_func, source, method, category, args, kwargs)
+
+    # News and Sentiment consume text and items from the same acquisition. Keep
+    # the unscoped public vendor path unchanged (Alpha Vantage can return a dict).
+    operation = method
+    if method == "get_news" and source in VENDOR_METHODS["get_news_feed"]:
+        feed_impl = VENDOR_METHODS["get_news_feed"][source]
+        impl_func = feed_impl[0] if isinstance(feed_impl, list) else feed_impl
+        operation = "get_news_feed"
+
+    try:
+        call_signature = signature(impl_func)
+    except (TypeError, ValueError):
+        request = {"args": args, "kwargs": kwargs}
+    else:
+        bound = call_signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        request = dict(bound.arguments)
+    instrument = request.get("symbol", request.get("ticker"))
+    if instrument is None and args:
+        instrument = args[0]
+    if isinstance(instrument, str):
+        request["instrument"] = normalize_symbol(instrument)
+    config = get_config()
+    request["configuration"] = {
+        key: config.get(key) for key in (
+            "data_vendors", "tool_vendors", "news_article_limit", "data_cache_dir",
+            "india_db_path", "asset_type", "data_revision",
+        )
+    }
+    value = session.fetch(
+        source, operation, request,
+        lambda: _fetch_source(impl_func, source, operation, category, args, kwargs),
+        category=category,
+    )
+    return value.text if method == "get_news" and isinstance(value, Feed) else value
+
+
+def _fetch_source(impl_func, source, method, category, args, kwargs):
     """Time each routed source separately, including its cache/HTTP children."""
     trace = current_trace()
     if trace is None:

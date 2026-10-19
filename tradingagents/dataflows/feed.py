@@ -24,6 +24,8 @@ class FeedItem:
     published: str = ""  # display string only; windowing already happened in the fetcher
     author: str = ""  # publisher, @user, or r/subreddit
     label: str | None = None  # the author's own Bullish/Bearish tag (StockTwits)
+    url: str = ""  # source URL when supplied by the vendor
+    published_at: str | None = None  # full UTC ISO timestamp; unknown stays None
 
 
 @dataclass(frozen=True)

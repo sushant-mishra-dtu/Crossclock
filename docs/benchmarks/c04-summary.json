@@ -1,0 +1,1026 @@
+{
+  "schema_version": 2,
+  "benchmark_id": "C04",
+  "status": "fixture_tested",
+  "measurement_kind": "offline_router_and_graph_source_counts",
+  "fixture_version": "c04-v2",
+  "interpretation": "Synthetic source-count and exact-evidence checks only; no latency, speedup, cost, real-source coverage or model-quality claim.",
+  "design": {
+    "tickers": [
+      "NVDA",
+      "RELIANCE.NS"
+    ],
+    "repetitions_per_ticker": 3,
+    "matched_pairs": 6,
+    "execution": "sequential baseline then shared; fresh scope per pair",
+    "network": "blocked Python sockets and curl_cffi",
+    "model_calls": 0,
+    "artificial_source_delays": false,
+    "fixture_rights": "invented CC0 test content",
+    "omitted_volatile_fields": [
+      "evidence_records[].fetched_at",
+      "evidence_records[].request_sha256"
+    ]
+  },
+  "configuration_sha256": "22854742bb77290cb8c1ac9a34546fec9314cfad975a55e608495698441654f4",
+  "source_configuration": {
+    "data_vendors": {
+      "core_stock_apis": "yfinance",
+      "fundamental_data": "yfinance",
+      "news_data": "yfinance"
+    },
+    "tool_vendors": {}
+  },
+  "request_hash_scope": "Configuration hashes use placeholders for runtime paths. Evidence request hashes cover the run's cache/database paths, so they are checked but not recorded.",
+  "fixtures": [
+    {
+      "ticker": "NVDA",
+      "asset_type": "stock",
+      "start_date": "2026-10-05",
+      "end_date": "2026-10-12",
+      "price": "NVDA prices 2026-10-05..2026-10-12: closes=100,102; return=2%",
+      "fundamentals": "NVDA fundamentals as-of 2026-10-12: EPS=2; PE=51",
+      "feed": {
+        "text": "## Synthetic NVDA news 2026-10-05..2026-10-12\n\n### Synthetic revenue result\nPublished: 2026-10-05T08:00:00Z\nAvailable: 2026-10-05T08:01:00Z\nURL: https://fixture.invalid/NVDA/revenue\nRevenue increased 10%.\n\n### Synthetic margin result\nPublished: 2026-10-12T09:00:00Z\nAvailable: 2026-10-12T09:01:00Z\nURL: https://fixture.invalid/NVDA/margin\nOperating margin was 20%.",
+        "items": [
+          {
+            "source": "news",
+            "text": "Revenue increased 10%. URL: https://fixture.invalid/NVDA/revenue",
+            "title": "Synthetic revenue result",
+            "published": "2026-10-05T08:00:00Z",
+            "author": "C04 synthetic fixture",
+            "label": null,
+            "url": "https://fixture.invalid/NVDA/revenue",
+            "published_at": "2026-10-05T08:00:00Z"
+          },
+          {
+            "source": "news",
+            "text": "Operating margin was 20%. URL: https://fixture.invalid/NVDA/margin",
+            "title": "Synthetic margin result",
+            "published": "2026-10-12T09:00:00Z",
+            "author": "C04 synthetic fixture",
+            "label": null,
+            "url": "https://fixture.invalid/NVDA/margin",
+            "published_at": "2026-10-12T09:00:00Z"
+          }
+        ],
+        "unavailable": false
+      },
+      "articles": [
+        {
+          "title": "Synthetic revenue result",
+          "text": "Revenue increased 10%.",
+          "url": "https://fixture.invalid/NVDA/revenue",
+          "published_at": "2026-10-05T08:00:00Z",
+          "available_at": "2026-10-05T08:01:00Z"
+        },
+        {
+          "title": "Synthetic margin result",
+          "text": "Operating margin was 20%.",
+          "url": "https://fixture.invalid/NVDA/margin",
+          "published_at": "2026-10-12T09:00:00Z",
+          "available_at": "2026-10-12T09:01:00Z"
+        }
+      ]
+    },
+    {
+      "ticker": "RELIANCE.NS",
+      "asset_type": "stock",
+      "start_date": "2026-10-05",
+      "end_date": "2026-10-12",
+      "price": "RELIANCE.NS prices 2026-10-05..2026-10-12: closes=100,102; return=2%",
+      "fundamentals": "RELIANCE.NS fundamentals as-of 2026-10-12: EPS=2; PE=51",
+      "feed": {
+        "text": "## Synthetic RELIANCE.NS news 2026-10-05..2026-10-12\n\n### Synthetic revenue result\nPublished: 2026-10-05T08:00:00Z\nAvailable: 2026-10-05T08:01:00Z\nURL: https://fixture.invalid/RELIANCE.NS/revenue\nRevenue increased 10%.\n\n### Synthetic margin result\nPublished: 2026-10-12T09:00:00Z\nAvailable: 2026-10-12T09:01:00Z\nURL: https://fixture.invalid/RELIANCE.NS/margin\nOperating margin was 20%.",
+        "items": [
+          {
+            "source": "news",
+            "text": "Revenue increased 10%. URL: https://fixture.invalid/RELIANCE.NS/revenue",
+            "title": "Synthetic revenue result",
+            "published": "2026-10-05T08:00:00Z",
+            "author": "C04 synthetic fixture",
+            "label": null,
+            "url": "https://fixture.invalid/RELIANCE.NS/revenue",
+            "published_at": "2026-10-05T08:00:00Z"
+          },
+          {
+            "source": "news",
+            "text": "Operating margin was 20%. URL: https://fixture.invalid/RELIANCE.NS/margin",
+            "title": "Synthetic margin result",
+            "published": "2026-10-12T09:00:00Z",
+            "author": "C04 synthetic fixture",
+            "label": null,
+            "url": "https://fixture.invalid/RELIANCE.NS/margin",
+            "published_at": "2026-10-12T09:00:00Z"
+          }
+        ],
+        "unavailable": false
+      },
+      "articles": [
+        {
+          "title": "Synthetic revenue result",
+          "text": "Revenue increased 10%.",
+          "url": "https://fixture.invalid/RELIANCE.NS/revenue",
+          "published_at": "2026-10-05T08:00:00Z",
+          "available_at": "2026-10-05T08:01:00Z"
+        },
+        {
+          "title": "Synthetic margin result",
+          "text": "Operating margin was 20%.",
+          "url": "https://fixture.invalid/RELIANCE.NS/margin",
+          "published_at": "2026-10-12T09:00:00Z",
+          "available_at": "2026-10-12T09:01:00Z"
+        }
+      ]
+    }
+  ],
+  "fixture_sha256": "ed93ca15360c9390ac9b41826ca771593fee04fae11aab1aa1dc38f14b185a01",
+  "pairs": [
+    {
+      "ticker": "NVDA",
+      "repetition": 1,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "repetition": 2,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "repetition": 3,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941",
+          "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+          "bb90c12b5a4b66c229b7ae99d8034574988c0a5c39cfe3a8b295a0600bd34941"
+        ],
+        "workload_answer_sha256": "80481e208fec70b3cb5687468f86c108e7371506abd9f2671ba6d034c00a4455",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "ce1512b8484a3caf2f813ca660d3385bb9fa3b24b6678c86416aaee38c6d996b",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "0ba033bff8879298b7650218da6c112c0c056c361a9d6cf6333cbf07e4159d91",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "2420f3af4891812843ca66b84788750bd7afe4e4faeb616b644630f13611a74a",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "NVDA",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "RELIANCE.NS",
+      "repetition": 1,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "RELIANCE.NS",
+      "repetition": 2,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "RELIANCE.NS",
+      "repetition": 3,
+      "baseline": {
+        "sharing": false,
+        "logical_reads": 7,
+        "source_acquisitions": 7,
+        "source_counts_by_operation": {
+          "get_stock_data": 2,
+          "get_fundamentals": 2,
+          "get_news": 2,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 2,
+          "fundamentals": 2,
+          "news": 3
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": []
+      },
+      "shared": {
+        "sharing": true,
+        "logical_reads": 7,
+        "source_acquisitions": 3,
+        "source_counts_by_operation": {
+          "get_stock_data": 1,
+          "get_fundamentals": 1,
+          "get_news": 0,
+          "get_news_feed": 1
+        },
+        "source_counts_by_kind": {
+          "price": 1,
+          "fundamentals": 1,
+          "news": 1
+        },
+        "answer_sha256": [
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c",
+          "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+          "d925fd47e39dd9a6c75ebc21b667269f016b689e3363f7a5a84450ee02abb07c"
+        ],
+        "workload_answer_sha256": "92c24d0b65d2f0b08be591d351d2f8b17e159b2074ea86f73f495c036fbdd204",
+        "news_article_count": 2,
+        "coverage_preserved": true,
+        "evidence_records": [
+          {
+            "source": "yfinance",
+            "operation": "get_fundamentals",
+            "content_sha256": "017bfc0ebd45d23bc3fd8e849f30aaa904712290ee6349f27809adcf8775c559",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": null,
+            "window_end": null,
+            "as_of": "2026-10-12",
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_news_feed",
+            "content_sha256": "42ea2cec0a9c679bcd4ca785f3417f903eddef7fc2af1a241d75155122d429de",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          },
+          {
+            "source": "yfinance",
+            "operation": "get_stock_data",
+            "content_sha256": "facb3f2d69e59bfce67eea0c90de20e574ce31d9774592bbaf2c21d3e6235fd6",
+            "parser_version": "rendered-v1",
+            "coverage": "available",
+            "instrument": "RELIANCE.NS",
+            "window_start": "2026-10-05",
+            "window_end": "2026-10-12",
+            "as_of": null,
+            "source_url": null,
+            "published_at": null,
+            "available_at": null,
+            "reporting_period": null,
+            "currency": null,
+            "unit": null
+          }
+        ]
+      }
+    }
+  ],
+  "graph": {
+    "workload": "C01's real-graph fixture: TradingAgentsGraph.propagate with C01's scripted model, four analysts, Jev off",
+    "fixture_sha256": "2e1b9f880a2f6a27c6ddea249b68705b1fbe05ea2d50eff08fcb242c4795307b",
+    "configuration_sha256": "645b400c35ae0a0ddef1281a367ccb8de3e838e547bc5fb5ba8de1b27fa0e796",
+    "acquisition_definition": "One vendor-function call, counted before C01's fixture source applies its own response cache; OHLCV loads included",
+    "baseline": {
+      "sharing": false,
+      "rating": "Overweight",
+      "source_acquisitions": 13,
+      "source_counts_by_operation": {
+        "get_balance_sheet": 1,
+        "get_cashflow": 1,
+        "get_fundamentals": 1,
+        "get_global_news": 1,
+        "get_income_statement": 1,
+        "get_indicators": 1,
+        "get_insider_transactions": 1,
+        "get_macro_indicators": 1,
+        "get_news": 2,
+        "get_prediction_markets": 1,
+        "get_stock_data": 1,
+        "ohlcv": 1
+      },
+      "logical_reads": 12,
+      "reads": [
+        {
+          "operation": "get_macro_indicators",
+          "source": "fred",
+          "request_sha256": "4fcbe25699f3b92a88eb899ddf136bd8202a7e1eff2a305dd7fde24d5353e521",
+          "answer_sha256": "07eaac5909a7377976ad070e74a5d033af3637f084d1b6c1ba9c768caf1b1e4d"
+        },
+        {
+          "operation": "get_prediction_markets",
+          "source": "polymarket",
+          "request_sha256": "93b4416f7c554060f7cab2f4a8a35cea738a18abcbd3792c7731ce9c7e415164",
+          "answer_sha256": "2969dc3fdd5fc731da00eef4ca7a6ebfb5c6133ff38c5e5b88b188c284a64f47"
+        },
+        {
+          "operation": "get_income_statement",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "2a5ebe6dd8f6cd9b0283aa97755dc20158fa0b2da79829997586f7689604a340"
+        },
+        {
+          "operation": "get_balance_sheet",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "3231f98491f0843a6e2e99c7576e31775724059d87f54efe1264867f30238f8e"
+        },
+        {
+          "operation": "get_stock_data",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6354b103461edab9570c566ecf6270f6f239ca2ae0ff4d0dd4f776fe0772db68"
+        },
+        {
+          "operation": "get_news",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6ebb173db6b370afac53f7d8baf22c82e88bad35c2da5c807febbd43498bb414"
+        },
+        {
+          "operation": "get_news",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6ebb173db6b370afac53f7d8baf22c82e88bad35c2da5c807febbd43498bb414"
+        },
+        {
+          "operation": "get_insider_transactions",
+          "source": "yfinance",
+          "request_sha256": "82ba7517d993e90a3b8011d51125dcb3adaa7b6d6b426abe02c85ff537847fa5",
+          "answer_sha256": "7db543e3423b62e4aa64f5c9dd8ef9dd39f6212a2f96f4d238b0e687e22aeb2e"
+        },
+        {
+          "operation": "get_global_news",
+          "source": "yfinance",
+          "request_sha256": "77299777b685a09d9490588d40b260d4ca740033cc48b7b06cce70da9b44bedf",
+          "answer_sha256": "a6c1181f168ee3dbb0802896de08464a7626931319f2b280d9e47e97ea040a95"
+        },
+        {
+          "operation": "get_indicators",
+          "source": "yfinance",
+          "request_sha256": "494d5aecec307825ac6e990e39ccb2777a04ce7104917aba8eb59c75034ed91e",
+          "answer_sha256": "c1e09066f132a3ee552acf7dcefc618ba6fabd1e68dd789d70dbca218716d479"
+        },
+        {
+          "operation": "get_cashflow",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "caffd8ee2554e64d8ef347049c474283bf0eaa06af2ab6dff3eca1877c01d405"
+        },
+        {
+          "operation": "get_fundamentals",
+          "source": "yfinance",
+          "request_sha256": "82ba7517d993e90a3b8011d51125dcb3adaa7b6d6b426abe02c85ff537847fa5",
+          "answer_sha256": "cbef2cf699ed3633d7fb311442625359d8910bcb2b80c2f8f5d1fba6a922ffaa"
+        }
+      ]
+    },
+    "shared": {
+      "sharing": true,
+      "rating": "Overweight",
+      "source_acquisitions": 12,
+      "source_counts_by_operation": {
+        "get_balance_sheet": 1,
+        "get_cashflow": 1,
+        "get_fundamentals": 1,
+        "get_global_news": 1,
+        "get_income_statement": 1,
+        "get_indicators": 1,
+        "get_insider_transactions": 1,
+        "get_macro_indicators": 1,
+        "get_news_feed": 1,
+        "get_prediction_markets": 1,
+        "get_stock_data": 1,
+        "ohlcv": 1
+      },
+      "logical_reads": 12,
+      "reads": [
+        {
+          "operation": "get_macro_indicators",
+          "source": "fred",
+          "request_sha256": "4fcbe25699f3b92a88eb899ddf136bd8202a7e1eff2a305dd7fde24d5353e521",
+          "answer_sha256": "07eaac5909a7377976ad070e74a5d033af3637f084d1b6c1ba9c768caf1b1e4d"
+        },
+        {
+          "operation": "get_prediction_markets",
+          "source": "polymarket",
+          "request_sha256": "93b4416f7c554060f7cab2f4a8a35cea738a18abcbd3792c7731ce9c7e415164",
+          "answer_sha256": "2969dc3fdd5fc731da00eef4ca7a6ebfb5c6133ff38c5e5b88b188c284a64f47"
+        },
+        {
+          "operation": "get_income_statement",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "2a5ebe6dd8f6cd9b0283aa97755dc20158fa0b2da79829997586f7689604a340"
+        },
+        {
+          "operation": "get_balance_sheet",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "3231f98491f0843a6e2e99c7576e31775724059d87f54efe1264867f30238f8e"
+        },
+        {
+          "operation": "get_stock_data",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6354b103461edab9570c566ecf6270f6f239ca2ae0ff4d0dd4f776fe0772db68"
+        },
+        {
+          "operation": "get_news",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6ebb173db6b370afac53f7d8baf22c82e88bad35c2da5c807febbd43498bb414"
+        },
+        {
+          "operation": "get_news",
+          "source": "yfinance",
+          "request_sha256": "31270d8387135f2e3e8f69a7f4ae6f61160493e94c84c8dcf4754df1cb9e3c90",
+          "answer_sha256": "6ebb173db6b370afac53f7d8baf22c82e88bad35c2da5c807febbd43498bb414"
+        },
+        {
+          "operation": "get_insider_transactions",
+          "source": "yfinance",
+          "request_sha256": "82ba7517d993e90a3b8011d51125dcb3adaa7b6d6b426abe02c85ff537847fa5",
+          "answer_sha256": "7db543e3423b62e4aa64f5c9dd8ef9dd39f6212a2f96f4d238b0e687e22aeb2e"
+        },
+        {
+          "operation": "get_global_news",
+          "source": "yfinance",
+          "request_sha256": "77299777b685a09d9490588d40b260d4ca740033cc48b7b06cce70da9b44bedf",
+          "answer_sha256": "a6c1181f168ee3dbb0802896de08464a7626931319f2b280d9e47e97ea040a95"
+        },
+        {
+          "operation": "get_indicators",
+          "source": "yfinance",
+          "request_sha256": "494d5aecec307825ac6e990e39ccb2777a04ce7104917aba8eb59c75034ed91e",
+          "answer_sha256": "c1e09066f132a3ee552acf7dcefc618ba6fabd1e68dd789d70dbca218716d479"
+        },
+        {
+          "operation": "get_cashflow",
+          "source": "sec_edgar",
+          "request_sha256": "73b7b28c0c7773602a554b270ec00dede760071431aace8bd7eccc501473bade",
+          "answer_sha256": "caffd8ee2554e64d8ef347049c474283bf0eaa06af2ab6dff3eca1877c01d405"
+        },
+        {
+          "operation": "get_fundamentals",
+          "source": "yfinance",
+          "request_sha256": "82ba7517d993e90a3b8011d51125dcb3adaa7b6d6b426abe02c85ff537847fa5",
+          "answer_sha256": "cbef2cf699ed3633d7fb311442625359d8910bcb2b80c2f8f5d1fba6a922ffaa"
+        }
+      ]
+    },
+    "reads_identical": true
+  },
+  "totals": {
+    "baseline_logical_reads": 42,
+    "shared_logical_reads": 42,
+    "baseline_source_acquisitions": 42,
+    "shared_source_acquisitions": 18,
+    "pairs_with_identical_answers": 6
+  }
+}

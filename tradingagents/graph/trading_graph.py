@@ -197,7 +197,8 @@ class TradingAgentsGraph:
         # call or retry after the deadline raises DeadlineExceeded, and the
         # checkpoint keeps the stages already finished for a later resume.
         control = current_control() or RunControl.from_config(self.config)
-        with run_config(self.config), use_control(control), \
+        # Each run fetches its own evidence, even inside a caller's equal config.
+        with run_config(self.config, fresh_evidence=True), use_control(control), \
                 self.checkpoint_scope(company_name, trade_date, asset_type, portfolio) as thread_id_value:
             return self._run_graph(
                 company_name, trade_date, asset_type=asset_type,
@@ -466,8 +467,9 @@ class TradingAgentsGraph:
         args = {**args, "stream_mode": ["values", "tasks"]}
         # The graph's own config serves every tool call, as in propagate(), even
         # when the process-wide config has changed since. Each step runs in the
-        # run's context, so the caller keeps its own between steps.
-        context = run_config_context(self.config)
+        # run's context, so the caller keeps its own between steps. The run's
+        # evidence is its own too, as in propagate().
+        context = run_config_context(self.config, fresh_evidence=True)
         # The run's budget: the caller's RunControl (the web job's, with its Stop),
         # else one from this graph's config. Checked after every step as well.
         control = context.run(current_control)

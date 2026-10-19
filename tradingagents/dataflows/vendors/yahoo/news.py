@@ -7,7 +7,7 @@ import yfinance as yf
 from dateutil.relativedelta import relativedelta
 
 from tradingagents.dataflows.config import get_config
-from tradingagents.dataflows.date_window import coverage_gap, in_window
+from tradingagents.dataflows.date_window import coverage_gap, in_window, to_utc
 from tradingagents.dataflows.errors import VendorUnavailableError
 from tradingagents.dataflows.feed import Feed, FeedItem
 from tradingagents.dataflows.symbols import normalize_symbol
@@ -132,7 +132,8 @@ def get_news_feed_yfinance(ticker: str, start_date: str, end_date: str) -> Feed:
             tuple(FeedItem(
                 "news", a["summary"], title=a["title"],
                 published=f"{a['pub_date']:%Y-%m-%d}" if a["pub_date"] else "",
-                author=a["publisher"],
+                author=a["publisher"], url=a["link"],
+                published_at=to_utc(a["pub_date"]).isoformat() if a["pub_date"] else None,
             ) for a in in_range),
         )
 
