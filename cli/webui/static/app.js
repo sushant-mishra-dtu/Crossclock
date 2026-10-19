@@ -2843,6 +2843,7 @@ function sourceDrawer() {
   dlg.className = 'sc-dialog src-drawer';
   dlg.setAttribute('aria-labelledby', 'src-drawer-h');
   document.body.appendChild(dlg);
+  // Browsers that follow the current dialog spec restore focus on close themselves; this covers the rest.
   dlg.addEventListener('close', () => {
     const back = dlg.__opener;
     dlg.__opener = null;
