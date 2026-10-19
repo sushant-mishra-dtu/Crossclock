@@ -549,17 +549,22 @@ def test_without_the_extra_a_key_screens_posts_unless_jev_is_disabled(monkeypatc
 
 
 @pytest.mark.unit
-def test_the_judgments_leave_the_analysts_own_graph_with_its_report():
-    """Each analyst runs in a graph that returns only what its spec names, so the
-    judgments must be named there to reach the run state, the UI and the report."""
+@pytest.mark.parametrize("recorded_checks", [{}, {"sentiment_judgments": "ran"}])
+def test_the_judgments_leave_the_analysts_own_graph_with_its_report(recorded_checks):
+    """The analyst's declared judgments and check status reach the run state,
+    while private messages and another analyst's report stay inside its graph."""
     from langchain_core.messages import AIMessage
 
     from tradingagents.graph.analyst_execution import ANALYST_NODE_SPECS
     from tradingagents.graph.setup import _analyst_graph
+    from tradingagents.run_control import record_check
 
     def analyst(state):
+        for name, status in recorded_checks.items():
+            record_check(name, status)
         return {"messages": [AIMessage(content="report")], "sentiment_report": "report",
                 "sentiment_judgments": {"band": "Mixed"}, "news_report": "not mine"}
 
     out = _analyst_graph(ANALYST_NODE_SPECS["social"], analyst, 3).invoke({"messages": []})
-    assert out == {"sentiment_report": "report", "sentiment_judgments": {"band": "Mixed"}}
+    assert out == {"sentiment_report": "report", "sentiment_judgments": {"band": "Mixed"},
+                   "run_checks": recorded_checks}
