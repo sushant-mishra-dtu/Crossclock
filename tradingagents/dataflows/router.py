@@ -7,7 +7,7 @@ from tradingagents.dataflows.errors import (
     VendorNotConfiguredError,
     VendorUnavailableError,
 )
-from tradingagents.dataflows.evidence import current_evidence
+from tradingagents.dataflows.evidence import current_evidence, request_hash
 from tradingagents.dataflows.feed import Feed
 from tradingagents.dataflows.provenance import note_acquisition
 from tradingagents.dataflows.symbols import normalize_symbol
@@ -274,7 +274,8 @@ def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
     )
     # A reused answer keeps the time it was really fetched (docs/adr/0003).
     record = session.record_for(source, operation, request, category=category)
-    note_acquisition(source, operation, request, "ok", value, record.fetched_at if record else None)
+    note_acquisition(source, operation, request, "ok", value, record.fetched_at if record else None,
+                     request_hash(request))
     return value.text if method == "get_news" and isinstance(value, Feed) else value
 
 

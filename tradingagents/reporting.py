@@ -8,8 +8,10 @@ run produces the same on-disk report tree a CLI run does.
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from tradingagents.agents.context import resolved_identity
 from tradingagents.agents.rating import run_rating
@@ -103,6 +105,21 @@ def _cell(value) -> str:
     return str(value if value not in (None, "") else "").replace("|", "\\|").replace("\n", " ")
 
 
+def _markdown_link(title, url) -> str | None:
+    """A vendor's article link as Markdown: web addresses only, its title unable to break out.
+
+    A feed is vendor-controlled text: a ``javascript:`` or ``data:`` address, or a
+    title holding brackets, must not become a live or altered link in a download.
+    """
+    if not isinstance(url, str) or not re.match(r"https?://", url, re.IGNORECASE):
+        return None
+    text = re.sub(r"([\\\[\]|])", r"\\\1", str(title or url)).replace("\n", " ")
+    return f"[{text}](<{quote(url, safe=_URL_SAFE)}>)"
+
+
+_URL_SAFE = ":/?#[]@!$&'()*+,;=%~-._"
+
+
 def _answered(entry: dict) -> list[dict]:
     return [a for a in entry.get("acquisitions") or () if a.get("outcome") == "ok"]
 
@@ -137,10 +154,10 @@ def sources_markdown(entries: list[dict]) -> str:
             e.get("coverage"))) + " |")
         for a in answered:
             for item in a.get("items") or ():
-                if item.get("url"):
+                link = _markdown_link(item.get("title"), item.get("url"))
+                if link:
                     published = item.get("published_at") or "publication time unknown"
-                    links.append(f"- {e['id']}: [{_cell(item.get('title') or item['url'])}]({item['url']}) "
-                                 f"({_cell(item.get('publisher'))}, {published})")
+                    links.append(f"- {e['id']}: {link} ({_cell(item.get('publisher'))}, {_cell(published)})")
     if links:
         lines += ["", "Articles linked from these sources:", "", *dict.fromkeys(links)]
     return "\n".join(lines)

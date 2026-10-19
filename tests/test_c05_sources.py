@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -32,7 +33,7 @@ from tradingagents.dataflows.config import run_config
 from tradingagents.dataflows.errors import VendorUnavailableError
 from tradingagents.dataflows.feed import Feed, FeedItem
 from tradingagents.graph.analyst_execution import ANALYST_NODE_SPECS
-from tradingagents.reporting import write_partial_report, write_report_tree
+from tradingagents.reporting import sources_markdown, write_partial_report, write_report_tree
 
 ANALYST_TOOLS = {
     "Market Analyst": ["get_stock_data", "get_indicators", "get_verified_market_snapshot"],
@@ -91,6 +92,8 @@ def test_each_entry_names_its_vendor_window_and_fetch_time_and_its_text_is_store
     assert acquired["operation"] == "get_stock_data"
     assert acquired["source"] in router.VENDOR_METHODS["get_stock_data"]
     assert acquired["outcome"] == "ok"
+    # The run's evidence session (C04) identified the request; the entry keeps that identity.
+    assert re.fullmatch(r"[0-9a-f]{64}", acquired["request_sha256"])
     assert (acquired["window_start"], acquired["window_end"]) == ("2026-01-02", TRADE_DATE)
     assert datetime.fromisoformat(acquired["fetched_at"]).utcoffset().total_seconds() == 0
 
@@ -306,6 +309,23 @@ def test_downloads_list_the_sources_without_their_texts(tmp_path, monkeypatch):
     assert [t for t, _ in sections][-1] == "V. Portfolio Manager Decision"
     assert "## Sources" not in sections[-1][1] and "E1" not in sections[-1][1]
     assert report_rating(sections) == "Overweight"
+
+
+@pytest.mark.unit
+def test_the_appendix_links_only_web_addresses_and_escapes_vendor_titles():
+    acquisition = {"source": "yfinance", "operation": "get_news_feed", "outcome": "ok", "items": [
+        {"title": "Beat [Q3](x) | estimates", "publisher": "Wire", "url": "https://example.com/a(1)?q=b c",
+         "published_at": None},
+        {"title": "Click me", "publisher": "Bad", "url": "javascript:alert(1)", "published_at": None},
+        {"title": "Data", "publisher": "Bad", "url": "data:text/html,hi", "published_at": None},
+    ]}
+    entries = [{"id": "E1", "analyst": "News Analyst", "tool": "get_news", "coverage": "available",
+                "acquisitions": [acquisition]}]
+
+    appendix = sources_markdown(entries)
+
+    assert "javascript:" not in appendix and "data:text" not in appendix
+    assert "- E1: [Beat \\[Q3\\](x) \\| estimates](<https://example.com/a(1)?q=b%20c>) (Wire, " in appendix
 
 
 @pytest.mark.unit

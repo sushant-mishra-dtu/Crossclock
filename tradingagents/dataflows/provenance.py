@@ -117,11 +117,15 @@ def _items(value) -> list[dict]:
 
 
 def acquisition(source: str, operation: str, request: Mapping | None, outcome: str,
-                value=None, fetched_at: str | None = None) -> dict:
-    """One vendor answer (or failure) as an entry records it."""
+                value=None, fetched_at: str | None = None, request_sha256: str | None = None) -> dict:
+    """One vendor answer (or failure) as an entry records it.
+
+    ``request_sha256`` is the run's evidence-session identity of the request
+    (C04), when the answer went through the session.
+    """
     start, end, as_of = request_window(request or {})
     record = {
-        "source": source, "operation": operation, "outcome": outcome,
+        "source": source, "operation": operation, "outcome": outcome, "request_sha256": request_sha256,
         "fetched_at": fetched_at or (datetime.now(UTC).isoformat() if outcome == "ok" else None),
         "window_start": start, "window_end": end, "as_of": as_of,
     }
@@ -131,11 +135,11 @@ def acquisition(source: str, operation: str, request: Mapping | None, outcome: s
 
 
 def note_acquisition(source: str, operation: str, request: Mapping | None, outcome: str,
-                     value=None, fetched_at: str | None = None) -> None:
+                     value=None, fetched_at: str | None = None, request_sha256: str | None = None) -> None:
     """Called by the router for each vendor it asks; does nothing outside a read."""
     sink = _acquisitions.get()
     if sink is not None:
-        sink.append(acquisition(source, operation, request, outcome, value, fetched_at))
+        sink.append(acquisition(source, operation, request, outcome, value, fetched_at, request_sha256))
 
 
 @contextmanager

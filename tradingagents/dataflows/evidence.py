@@ -167,6 +167,11 @@ def _request_date(request, *keys):
     return None
 
 
+def request_hash(request) -> str:
+    """The identity ``EvidenceSession.fetch`` gives a request (its ``request_sha256``)."""
+    return _sha256(deepcopy(request))
+
+
 def request_window(request) -> tuple[str | None, str | None, str | None]:
     """(window start, window end, as-of date) a request states, each None when it states none."""
     return (_request_date(request, "start_date", "window_start"),
@@ -228,7 +233,7 @@ class EvidenceSession:
     def record_for(self, source: str, operation: str, request: dict, *,
                    category: str) -> EvidenceRecord | None:
         """The retained record for a request, giving when its answer was really fetched."""
-        key = (source, operation, category, _sha256(deepcopy(request)))
+        key = (source, operation, category, request_hash(request))
         with self._lock:
             cached = self._cache.get(key)
             return None if cached is None else cached.record
