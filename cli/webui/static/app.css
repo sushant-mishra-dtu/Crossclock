@@ -421,13 +421,21 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .bf-facts dd { margin: 0; overflow-wrap: anywhere; }
 .bf-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; }
 .bf-claim { display: flex; flex-direction: column; gap: 8px; }
+/* The statement wraps below its verdict when the column is narrow. */
+.bf-claim-head { gap: 6px 10px; align-items: flex-start; flex-wrap: wrap; }
+.bf-claim-head .bf-text { flex: 1 1 240px; min-width: 0; }
+.tbl .nowrap { white-space: nowrap; }
+.tbl tr.bf-group > th { padding-top: 14px; font-weight: 600; color: var(--text-2); background: none; }
 .bf-figures { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .bf-headline { display: flex; flex-direction: column; gap: 4px; }
 .bf-headline a, .src-entry a { color: var(--accent-text); }
-.src-drawer {
-  margin: 0 0 0 auto; width: min(620px, 100vw); height: 100vh; max-height: 100vh;
+/* Two classes: .sc-dialog, later in this file, would otherwise set its own size. */
+.sc-dialog.src-drawer {
+  margin: 0 0 0 auto; width: min(620px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh;
   border-radius: 18px 0 0 18px; overflow-y: auto; overscroll-behavior: contain;
 }
+/* The heading takes focus when the drawer opens, for screen readers; it is not a control. */
+.src-drawer h2[tabindex="-1"]:focus { outline: none; }
 .src-entry { padding-top: 16px; border-top: 1px solid var(--line); }
 .src-line { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .src-line .mono { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
@@ -783,7 +791,7 @@ th.r .sc-sort { justify-content: flex-end; }
   .co-quote { align-items: flex-start; }
 }
 @media (max-width: 640px) {
-  .src-drawer { width: 100vw; border-radius: 0; padding: 18px 16px; }
+  .sc-dialog.src-drawer { width: 100vw; border-radius: 0; padding: 18px 16px; }
   .bf-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .bf-facts dd { margin-bottom: 8px; }
   .side-menu {

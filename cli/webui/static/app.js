@@ -2698,11 +2698,12 @@ const RUN_STATES = { complete: 'Complete', complete_with_gaps: 'Complete with ga
 const webUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
 
 /** A time in the reader's local zone, with the exact UTC instant on hover; unknown says so. */
-function whenHtml(iso, unknown = 'unknown') {
+function whenHtml(iso, unknown = 'unknown', short = false) {
   if (!iso) return `<span class="faint">${esc(unknown)}</span>`;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return esc(iso);
-  return `<time datetime="${esc(iso)}" title="${esc(d.toISOString())} (UTC)">${esc(d.toLocaleString())}</time>`;
+  const local = short ? d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : d.toLocaleString();
+  return `<time datetime="${esc(iso)}" title="${esc(d.toISOString())} (UTC)">${esc(local)}</time>`;
 }
 
 function wordPill([label, tone]) {
@@ -2762,13 +2763,13 @@ function briefView(b) {
       ? 'stated in ' + f.found.map((x) => sourceButton([x.id], x.id, { figure: f.figure, line: x.line, mono: true })).join(' ') + (f.more ? ` <span class="faint">and ${f.more} more</span>` : '')
       : '<span class="faint">in no source this run fetched</span>'}</li>`).join('');
     return `<li class="bf-claim" aria-labelledby="bf-c${i}">
-      <div class="row" style="gap: 10px; align-items: flex-start;">${wordPill(STATEMENT_VERDICTS[c.verdict] || [c.verdict, 'pill-plain'])}<p id="bf-c${i}" class="bf-text grow">${esc(c.claim)}</p></div>
+      <div class="row bf-claim-head">${wordPill(STATEMENT_VERDICTS[c.verdict] || [c.verdict, 'pill-plain'])}<p id="bf-c${i}" class="bf-text">${esc(c.claim)}</p></div>
       <p class="hint">${esc(c.verdictText)}${c.section ? ` · ${esc(c.section.label)}` : ''}</p>
-      ${c.sources.length ? `<div class="row" style="gap: 8px; flex-wrap: wrap;">${sourceButton(c.sources, `Sources behind that section (${c.sources.length})`)}<span class="hint">what the analyst read; not a check that a source supports the statement</span></div>` : ''}
+      ${c.sources.length ? `<div>${sourceButton(c.sources, `Sources behind that section (${c.sources.length})`)}</div>` : ''}
       ${figures ? `<ul class="bf-figures" aria-label="Figures in this statement">${figures}</ul>` : ''}</li>`;
   }).join('');
   parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-st-h"><h3 id="bf-st-h" class="bf-h">Statements in the decision</h3>
-    <p class="hint">${esc(st.text)}</p>
+    <p class="hint">${esc(st.text)}${claims ? ' "Sources behind that section" lists what that analyst read; it is not a check that a source supports the statement.' : ''}</p>
     ${claims ? `<ol class="bf-list">${claims}</ol>` : ''}</section>`);
 
   const hl = b.headlines;
@@ -2784,13 +2785,16 @@ function briefView(b) {
   }
 
   if (b.coverage.length) {
-    const rows = b.coverage.flatMap((g) => g.entries.map((e, i) => `<tr>${i === 0 ? `<th scope="rowgroup" rowspan="${g.entries.length}">${esc(g.analyst)}</th>` : ''}
-      <td>${sourceButton([e.id], e.id, { mono: true })}</td><td class="mono">${esc(e.tool)}</td><td>${esc(e.sources.join(', ') || 'not recorded')}</td>
-      <td>${esc(e.window || '')}${e.asOf ? `${e.window ? '<br>' : ''}as of ${esc(e.asOf)}` : ''}</td><td>${whenHtml(e.fetchedAt, 'not recorded')}</td>
-      <td>${wordPill(COVERAGE_WORDS[e.coverage] || [e.coverage, 'pill-plain'])}</td></tr>`)).join('');
+    // One header row per analyst, and coverage beside the ID, so a gap shows without scrolling sideways.
+    const rows = b.coverage.map((g) => `<tr class="bf-group"><th scope="colgroup" colspan="6">${esc(g.analyst)}</th></tr>`
+      + g.entries.map((e) => `<tr><td>${sourceButton([e.id], e.id, { mono: true })}</td>
+      <td>${wordPill(COVERAGE_WORDS[e.coverage] || [e.coverage, 'pill-plain'])}</td><td class="mono">${esc(e.tool).replace(/_/g, '_<wbr>')}</td>
+      <td>${esc(e.sources.join(', ') || 'not recorded')}</td>
+      <td class="nowrap">${esc(e.window || '')}${e.asOf ? `${e.window ? '<br>' : ''}as of ${esc(e.asOf)}` : ''}</td>
+      <td class="nowrap">${whenHtml(e.fetchedAt, 'not recorded', true)}</td></tr>`).join('')).join('');
     parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-cov-h"><h3 id="bf-cov-h" class="bf-h">Data coverage</h3>
-      <div class="table-scroll"><table class="tbl compact"><caption class="sr">What each analyst read, with its source, window, fetch time and coverage</caption>
-      <thead><tr><th scope="col">Analyst</th><th scope="col">Source</th><th scope="col">Tool</th><th scope="col">Vendor</th><th scope="col">Window</th><th scope="col">Fetched</th><th scope="col">Coverage</th></tr></thead>
+      <div class="table-scroll"><table class="tbl compact"><caption class="sr">What each analyst read, with its coverage, tool, vendor, window and fetch time</caption>
+      <thead><tr><th scope="col">Source</th><th scope="col">Coverage</th><th scope="col">Tool</th><th scope="col">Vendor</th><th scope="col">Window</th><th scope="col">Fetched</th></tr></thead>
       <tbody>${rows}</tbody></table></div></section>`);
   }
 
@@ -2852,7 +2856,10 @@ function sourceDrawer() {
       box.hidden = true; show.setAttribute('aria-expanded', 'false'); show.textContent = 'Show the text the analyst read';
       return;
     }
-    show.disabled = true;
+    // Not `disabled`: disabling the focused button would drop keyboard focus to the page.
+    if (show.__busy) return;
+    show.__busy = true;
+    show.setAttribute('aria-busy', 'true');
     try {
       if (!box.__loaded) {
         const r = await api(`/report/source?id=${encodeURIComponent(dlg.__report)}&sha=${encodeURIComponent(show.dataset.srcText)}`);
@@ -2863,7 +2870,7 @@ function sourceDrawer() {
     } catch (err) {
       box.innerHTML = `<div class="alert alert-neg">${I.alert}<div>${esc(err.message)}</div></div>`;
       box.hidden = false;
-    } finally { show.disabled = false; }
+    } finally { show.__busy = false; show.removeAttribute('aria-busy'); }
   });
   return dlg;
 }
