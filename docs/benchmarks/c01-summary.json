@@ -1,13 +1,14 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "benchmark_id": "C01",
+  "updated_date": "2026-10-16",
+  "status": "complete",
   "measurement_kind": "live_graph_on_synthetic_sources",
-  "source_revision": "be0c3e1ea348a3d262bc8712b54993553791ea1b",
-  "source_tree_sha256": "4cbb23d74687314550390e3f18e069cecec456542aec53cf369573be25fe78c1",
-  "fixture_sha256": "5e53116fc407d2ca0ec16a588ff2b58ea8fcfa16840a89ef77f7524df81d33d4",
-  "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
-  "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
-  "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+  "baseline_status": "three_complete_comparable_pairs",
+  "qualification_gaps": [],
+  "qualified_pair_count": 3,
+  "registered_pair_count": 3,
+  "interpretation": "Live models on invented CC0 source evidence; diagnostic, with no real-market, quality, p95 or achieved speedup claim.",
   "workload": {
     "symbol": "NVDA",
     "trade_date": "2026-01-09",
@@ -19,104 +20,420 @@
       "fundamentals"
     ]
   },
+  "models": {
+    "nvidia": "nvidia/nemotron-3-super-120b-a12b",
+    "jev": "jev-1.13.0",
+    "max_output_tokens": 2048,
+    "temperature": 1.0,
+    "thinking": false,
+    "sdk_max_retries": 0
+  },
+  "research_configuration": {
+    "comparable": true,
+    "configuration_hashes": [
+      "4f19e627f2a0cb48ceb108e1e0100775d934adedfadce449026c156462cfe4ac"
+    ],
+    "workload_hashes": [
+      "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6"
+    ],
+    "corpus_hashes": [
+      "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142"
+    ],
+    "registration_differences": {
+      "llm_request_timeout_seconds": {
+        "old": 60,
+        "new": 180
+      }
+    }
+  },
+  "comparability_limits": [
+    "Matched config/corpus across reviewed instrumentation revisions; no detected inference-semantic change.",
+    "Old dirty intermediate sources were not archived; exact source equality cannot be proven.",
+    "Instrumentation overhead, provider/day load, model prompt cache and nondeterministic tool choices are uncontrolled.",
+    "Old pair1 warm seed was passed in memory; exact seed bytes are unobserved.",
+    "Recovery pair 2 spans two attempts; the warm run is linked to its cold run by the saved cache hash, and only the runner and summarizer sources differ between those attempts.",
+    "Warm source cache cannot show a speed effect: each fixture fetch sleeps 10 ms, while run-to-run model wait varies by minutes."
+  ],
+  "timing_semantics": "Research completion is first setup/explicit measurement-start to persisted_report; full wall and pre-setup are retained. Startup is not silently discarded.",
+  "node_duration_semantics": "Inclusive top-level node waits; parallel/nested durations overlap and are not summed as wall time.",
+  "cache_semantics": "Cold/warm controls only synthetic source-response cache. NVIDIA prompt cache is uncontrolled; cached input is a reported subset and is not added again.",
+  "pairs": [
+    {
+      "pair": 1,
+      "session": "c01-live-graph-20261016-timeout180",
+      "sessions": {
+        "cold_fixture_cache": "c01-live-graph-20261016-timeout180",
+        "warm_fixture_cache": "c01-live-graph-20261016-timeout180"
+      },
+      "status": "complete",
+      "seed_link": "verified",
+      "runs": [
+        "live-7fd30c620837-cold_fixture_cache-01",
+        "live-7fd30c620837-warm_fixture_cache-01"
+      ]
+    },
+    {
+      "pair": 2,
+      "session": "c01-live-graph-20261016-timeout180",
+      "sessions": {
+        "cold_fixture_cache": "c01-live-graph-20261016-timeout180",
+        "warm_fixture_cache": "c01-live-graph-20261016-timeout180-completion"
+      },
+      "status": "complete",
+      "seed_link": "verified",
+      "runs": [
+        "live-7fd30c620837-cold_fixture_cache-02",
+        "live-0ae4076b7771-warm_fixture_cache-02"
+      ]
+    },
+    {
+      "pair": 3,
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "sessions": {
+        "cold_fixture_cache": "c01-live-graph-20261016-timeout180-completion",
+        "warm_fixture_cache": "c01-live-graph-20261016-timeout180-completion"
+      },
+      "status": "complete",
+      "seed_link": "verified",
+      "runs": [
+        "live-0ae4076b7771-cold_fixture_cache-03",
+        "live-0ae4076b7771-warm_fixture_cache-03"
+      ]
+    }
+  ],
   "groups": [
     {
       "mode": "cold_fixture_cache",
-      "registered_n": 3,
-      "completed_n": 2,
-      "statuses": {
-        "completed": 2,
-        "not_started": 1
+      "n": 3,
+      "medians": {
+        "research_setup_to_persist_ms": 371908.227,
+        "end_to_end_wall_ms": 371997.166,
+        "pre_setup_ms": 1046.436,
+        "generated_report_ms": 28265.603
       },
-      "median_wall_ms": 232783.15399999998,
-      "median_parallel_analyst_max_path_ms": 34069.8615,
       "top_three_latency_contributors": [
         {
-          "node": "Bear Researcher",
-          "median_inclusive_ms": 36521.551999999996,
-          "n": 2
+          "node": "Market Analyst",
+          "median_inclusive_ms": 79646.459,
+          "n": 3
         },
         {
-          "node": "Market Analyst",
-          "median_inclusive_ms": 34069.8615,
-          "n": 2
+          "node": "Bear Researcher",
+          "median_inclusive_ms": 62393.5,
+          "n": 3
         },
         {
           "node": "Bull Researcher",
-          "median_inclusive_ms": 29920.186,
-          "n": 2
+          "median_inclusive_ms": 57618.246,
+          "n": 3
         }
       ],
-      "tail": "unestimated: registered n=3 per regime"
+      "counts": {
+        "logical_llm_invocations": 97,
+        "llm_generation_attempts": 97,
+        "observed_http_attempts": 127,
+        "refused_http_sends": 0,
+        "jev_logical_calls": 30,
+        "http_by_provider": {
+          "nvidia": 97,
+          "typesafe": 30
+        },
+        "usage": {
+          "reported_input_tokens": 343761,
+          "reported_output_tokens": 44914,
+          "reported_cached_input_tokens": 0,
+          "usage_missing_calls": 0,
+          "cached_usage_missing_calls": 0,
+          "finish_reason_missing_calls": 0
+        },
+        "finish_reasons": {
+          "tool_calls": 71,
+          "stop": 22,
+          "length": 4
+        },
+        "reported_length_finish_count": 4,
+        "finish_reason_coverage": "reported"
+      },
+      "tail": "unqualified_small_n",
+      "first_useful_result_ms": null
     },
     {
       "mode": "warm_fixture_cache",
-      "registered_n": 3,
-      "completed_n": 1,
-      "statuses": {
-        "completed": 1,
-        "failed": 1,
-        "not_started": 1
+      "n": 3,
+      "medians": {
+        "research_setup_to_persist_ms": 435774.785,
+        "end_to_end_wall_ms": 436395.149,
+        "pre_setup_ms": 346.791,
+        "generated_report_ms": 19660.259
       },
-      "median_wall_ms": 175285.055,
-      "median_parallel_analyst_max_path_ms": 42183.163,
       "top_three_latency_contributors": [
         {
-          "node": "Fundamentals Analyst",
-          "median_inclusive_ms": 42183.163,
-          "n": 1
+          "node": "News Analyst",
+          "median_inclusive_ms": 69828.653,
+          "n": 3
         },
         {
           "node": "Market Analyst",
-          "median_inclusive_ms": 40114.521,
-          "n": 1
+          "median_inclusive_ms": 54703.698,
+          "n": 3
         },
         {
-          "node": "Bear Researcher",
-          "median_inclusive_ms": 37940.038,
-          "n": 1
+          "node": "Bull Researcher",
+          "median_inclusive_ms": 54684.054,
+          "n": 3
         }
       ],
-      "tail": "unestimated: registered n=3 per regime"
+      "counts": {
+        "logical_llm_invocations": 90,
+        "llm_generation_attempts": 90,
+        "observed_http_attempts": 115,
+        "refused_http_sends": 0,
+        "jev_logical_calls": 25,
+        "http_by_provider": {
+          "nvidia": 90,
+          "typesafe": 25
+        },
+        "usage": {
+          "reported_input_tokens": 321417,
+          "reported_output_tokens": 43255,
+          "reported_cached_input_tokens": 4576,
+          "usage_missing_calls": 0,
+          "cached_usage_missing_calls": 0,
+          "finish_reason_missing_calls": 0
+        },
+        "finish_reasons": {
+          "tool_calls": 66,
+          "stop": 19,
+          "length": 5
+        },
+        "reported_length_finish_count": 5,
+        "finish_reason_coverage": "reported"
+      },
+      "tail": "unqualified_small_n",
+      "first_useful_result_ms": null
     }
   ],
-  "nvidia_budget": {
-    "http_attempts": 96,
-    "max_attempts": 96,
-    "reserved_worst_case_usd": 0.0,
-    "cap_usd": null,
-    "stopped": true,
-    "stop_reason": "send_budget_exhausted"
-  },
-  "jev_budget": {
-    "http_attempts": 26,
-    "max_attempts": 356,
-    "reserved_worst_case_usd": 0.071565312,
-    "cap_usd": 0.98,
-    "stopped": true,
-    "stop_reason": null
-  },
-  "jev_reported_estimated_cost_usd": 0.0013429499999999999,
-  "status": "initial_diagnostic_incomplete_pairs",
-  "interpretation": "Frozen synthetic sources with live models. Only one paired repetition completed; no speedup or qualified p95 claim.",
-  "component_probe_nvidia_sends": 6,
-  "component_probe_jev_sends": 6,
-  "total_nvidia_sends": 102,
-  "total_jev_sends": 32,
-  "total_jev_estimated_usd": 0.00142107,
-  "total_jev_reserved_worst_case_usd": 0.088080384,
-  "raw_evidence_dir": "results/benchmarks/c01-live-graph-20261014",
-  "attribution_correction": "101 unique parent repairs; originals preserved; timing, token and send counts unchanged",
-  "samples": [
+  "selected_runs": [
     {
-      "run_id": "live-graph-cold_fixture_cache-01",
+      "session": "c01-live-graph-20261016-timeout180",
+      "run_id": "live-7fd30c620837-cold_fixture_cache-01",
+      "pair": 1,
       "mode": "cold_fixture_cache",
-      "repetition": 1,
       "status": "completed",
-      "wall_ms": 287181.849,
-      "available_generated_report_ms": 108394.411,
+      "rating": "Sell",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 342560.0,
+        "legacy_wall_ms": 342544.656,
+        "research_setup_to_persist_ms": 341489.087,
+        "pre_setup_ms": 1046.436,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 26810.712,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 38,
+      "jev_http_attempts": 12,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 29,
+        "fetches": 28,
+        "cache_hits": 1,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "2c05de738eaef9bb655a45d175d75f7b63c1a64a062cec2d7676e20c7a87342e",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": null
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180",
+      "run_id": "live-7fd30c620837-warm_fixture_cache-01",
+      "pair": 1,
+      "mode": "warm_fixture_cache",
+      "status": "completed",
+      "rating": "Hold",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 436395.149,
+        "legacy_wall_ms": 436124.992,
+        "research_setup_to_persist_ms": 435774.785,
+        "pre_setup_ms": 346.791,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 19660.259,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 35,
+      "jev_http_attempts": 7,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 27,
+        "fetches": 3,
+        "cache_hits": 24,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "2c05de738eaef9bb655a45d175d75f7b63c1a64a062cec2d7676e20c7a87342e",
+      "exclusion_reason": null
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180",
+      "run_id": "live-7fd30c620837-cold_fixture_cache-02",
+      "pair": 2,
+      "mode": "cold_fixture_cache",
+      "status": "completed",
+      "rating": "Buy",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 371997.166,
+        "legacy_wall_ms": 371977.571,
+        "research_setup_to_persist_ms": 371908.227,
+        "pre_setup_ms": 66.258,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 28265.603,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 31,
+      "jev_http_attempts": 12,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 23,
+        "fetches": 23,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "e36ef852c6953aff8af6fe3a14a64756ac8d225ff5d57d4c5f2ec796a8815934",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": null
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "run_id": "live-0ae4076b7771-warm_fixture_cache-02",
+      "pair": 2,
+      "mode": "warm_fixture_cache",
+      "status": "completed",
+      "rating": "Sell",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 513466.99,
+        "legacy_wall_ms": 513429.109,
+        "research_setup_to_persist_ms": 494657.141,
+        "pre_setup_ms": 18649.248,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 57342.526,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 30,
+      "jev_http_attempts": 12,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 22,
+        "fetches": 4,
+        "cache_hits": 18,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "e36ef852c6953aff8af6fe3a14a64756ac8d225ff5d57d4c5f2ec796a8815934",
+      "exclusion_reason": null
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "run_id": "live-0ae4076b7771-cold_fixture_cache-03",
+      "pair": 3,
+      "mode": "cold_fixture_cache",
+      "status": "completed",
+      "rating": "Buy",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 424160.868,
+        "legacy_wall_ms": 420594.714,
+        "research_setup_to_persist_ms": 417197.418,
+        "pre_setup_ms": 3391.968,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 36176.479,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 28,
+      "jev_http_attempts": 6,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 19,
+        "fetches": 19,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "e1b06a25e1575057701186bf09616d6c1ef78e2ecbb79344baf432ff416b5910",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": null
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "run_id": "live-0ae4076b7771-warm_fixture_cache-03",
+      "pair": 3,
+      "mode": "warm_fixture_cache",
+      "status": "completed",
+      "rating": "Underweight",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 285462.171,
+        "legacy_wall_ms": 285416.221,
+        "research_setup_to_persist_ms": 285265.822,
+        "pre_setup_ms": 145.085,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 16423.739,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 25,
+      "jev_http_attempts": 6,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 17,
+        "fetches": 4,
+        "cache_hits": 13,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "e1b06a25e1575057701186bf09616d6c1ef78e2ecbb79344baf432ff416b5910",
+      "exclusion_reason": null
+    }
+  ],
+  "historical_excluded_runs": [
+    {
+      "session": "c01-live-graph-20261014",
+      "run_id": "live-graph-cold_fixture_cache-01",
+      "pair": 1,
+      "mode": "cold_fixture_cache",
+      "status": "completed",
+      "rating": "Sell",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 287181.849,
+        "legacy_wall_ms": 287181.849,
+        "research_setup_to_persist_ms": 189327.307,
+        "pre_setup_ms": 97847.647,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": 10546.764,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 36,
       "jev_http_attempts": 13,
+      "refused_http_sends": 0,
       "source_metrics": {
         "requests": 27,
         "fetches": 27,
@@ -125,17 +442,31 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
-      }
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "historical_unmatched_completed_sample"
     },
     {
+      "session": "c01-live-graph-20261014",
       "run_id": "live-graph-cold_fixture_cache-02",
+      "pair": 2,
       "mode": "cold_fixture_cache",
-      "repetition": 2,
       "status": "completed",
-      "wall_ms": 178384.459,
-      "available_generated_report_ms": 11526.929,
+      "rating": "Hold",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 178384.459,
+        "legacy_wall_ms": 178384.459,
+        "research_setup_to_persist_ms": 177583.572,
+        "pre_setup_ms": 797.552,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": 10729.377,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 23,
       "jev_http_attempts": 7,
+      "refused_http_sends": 0,
       "source_metrics": {
         "requests": 15,
         "fetches": 15,
@@ -144,17 +475,31 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
-      }
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "historical_unmatched_completed_sample"
     },
     {
+      "session": "c01-live-graph-20261014",
       "run_id": "live-graph-cold_fixture_cache-03",
+      "pair": 3,
       "mode": "cold_fixture_cache",
-      "repetition": 3,
       "status": "not_started",
-      "wall_ms": 0.186,
-      "available_generated_report_ms": null,
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 0.186,
+        "legacy_wall_ms": 0.186,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 0,
       "jev_http_attempts": 0,
+      "refused_http_sends": 0,
       "source_metrics": {
         "requests": 0,
         "fetches": 0,
@@ -163,17 +508,31 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
-      }
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
     },
     {
+      "session": "c01-live-graph-20261014",
       "run_id": "live-graph-warm_fixture_cache-01",
+      "pair": 1,
       "mode": "warm_fixture_cache",
-      "repetition": 1,
       "status": "completed",
-      "wall_ms": 175285.055,
-      "available_generated_report_ms": 24467.252,
+      "rating": "Hold",
+      "claim_check_section": "present",
+      "timing": {
+        "end_to_end_wall_ms": 175285.055,
+        "legacy_wall_ms": 175285.055,
+        "research_setup_to_persist_ms": 175018.783,
+        "pre_setup_ms": 256.833,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": 24210.419,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 36,
       "jev_http_attempts": 6,
+      "refused_http_sends": 0,
       "source_metrics": {
         "requests": 28,
         "fetches": 4,
@@ -182,17 +541,31 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
-      }
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "historical_unmatched_completed_sample"
     },
     {
+      "session": "c01-live-graph-20261014",
       "run_id": "live-graph-warm_fixture_cache-02",
+      "pair": 2,
       "mode": "warm_fixture_cache",
-      "repetition": 2,
       "status": "failed",
-      "wall_ms": 1142.146,
-      "available_generated_report_ms": null,
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 1142.146,
+        "legacy_wall_ms": 1142.146,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": 75.127,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 1,
       "jev_http_attempts": 0,
+      "refused_http_sends": 5,
       "source_metrics": {
         "requests": 5,
         "fetches": 0,
@@ -201,17 +574,31 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
-      }
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
     },
     {
+      "session": "c01-live-graph-20261014",
       "run_id": "live-graph-warm_fixture_cache-03",
+      "pair": 3,
       "mode": "warm_fixture_cache",
-      "repetition": 3,
       "status": "not_started",
-      "wall_ms": 0.241,
-      "available_generated_report_ms": null,
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 0.241,
+        "legacy_wall_ms": 0.241,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
       "nvidia_http_attempts": 0,
       "jev_http_attempts": 0,
+      "refused_http_sends": 0,
       "source_metrics": {
         "requests": 0,
         "fetches": 0,
@@ -220,7 +607,1176 @@
         "retries": 0,
         "rate_limits": 0,
         "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180",
+      "run_id": "live-7fd30c620837-warm_fixture_cache-02",
+      "pair": 2,
+      "mode": "warm_fixture_cache",
+      "status": "failed",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 56293.692,
+        "legacy_wall_ms": 56270.848,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": 61.839,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 18246.889,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 19,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 1,
+      "source_metrics": {
+        "requests": 20,
+        "fetches": 4,
+        "cache_hits": 16,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "e36ef852c6953aff8af6fe3a14a64756ac8d225ff5d57d4c5f2ec796a8815934",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "live-c06c7ed08817-cold_fixture_cache-02",
+      "pair": 2,
+      "mode": "cold_fixture_cache",
+      "status": "failed",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 181058.768,
+        "legacy_wall_ms": 181048.691,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": 422.503,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 17136.449,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 29,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 27,
+        "fetches": 27,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "5bb81895e159db60576301c2262548e239a8ced3ff12ae62c16f74bf06d8aa9c",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "live-c06c7ed08817-cold_fixture_cache-03",
+      "pair": 3,
+      "mode": "cold_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 14.872,
+        "legacy_wall_ms": 0.121,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "live-c06c7ed08817-warm_fixture_cache-02",
+      "pair": 2,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 19.939,
+        "legacy_wall_ms": 0.127,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "5bb81895e159db60576301c2262548e239a8ced3ff12ae62c16f74bf06d8aa9c",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "live-c06c7ed08817-warm_fixture_cache-03",
+      "pair": 3,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 16.101,
+        "legacy_wall_ms": 0.125,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "live-51196a39598a-cold_fixture_cache-02",
+      "pair": 2,
+      "mode": "cold_fixture_cache",
+      "status": "failed",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 65341.183,
+        "legacy_wall_ms": 65330.566,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": 457.891,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 26363.451,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 17,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 17,
+        "fetches": 16,
+        "cache_hits": 1,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "9253878f3901c640914523b5be284cc3cced930078c39fae555f4742ba40e5c7",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "live-51196a39598a-cold_fixture_cache-03",
+      "pair": 3,
+      "mode": "cold_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 20.165,
+        "legacy_wall_ms": 0.118,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "live-51196a39598a-warm_fixture_cache-02",
+      "pair": 2,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 16.697,
+        "legacy_wall_ms": 0.121,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "9253878f3901c640914523b5be284cc3cced930078c39fae555f4742ba40e5c7",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "live-51196a39598a-warm_fixture_cache-03",
+      "pair": 3,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 13.253,
+        "legacy_wall_ms": 0.105,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "live-f843dc82fd57-cold_fixture_cache-02",
+      "pair": 2,
+      "mode": "cold_fixture_cache",
+      "status": "failed",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 132314.416,
+        "legacy_wall_ms": 132273.034,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": 1004.101,
+        "measurement_start_basis": "explicit_milestone",
+        "generated_report_ms": 39286.308,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 23,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 22,
+        "fetches": 22,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "3954bebf4bcf5c90e680b0d459ba216d0d07e225dfdcb064d3a5c7918943df83",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "live-f843dc82fd57-cold_fixture_cache-03",
+      "pair": 3,
+      "mode": "cold_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 22.587,
+        "legacy_wall_ms": 0.155,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "input_fixture_cache_sha256": null,
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "live-f843dc82fd57-warm_fixture_cache-02",
+      "pair": 2,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 48.956,
+        "legacy_wall_ms": 0.128,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "3954bebf4bcf5c90e680b0d459ba216d0d07e225dfdcb064d3a5c7918943df83",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "live-f843dc82fd57-warm_fixture_cache-03",
+      "pair": 3,
+      "mode": "warm_fixture_cache",
+      "status": "not_started",
+      "rating": null,
+      "claim_check_section": "unknown",
+      "timing": {
+        "end_to_end_wall_ms": 28.675,
+        "legacy_wall_ms": 0.274,
+        "research_setup_to_persist_ms": null,
+        "pre_setup_ms": null,
+        "measurement_start_basis": "first_setup_span",
+        "generated_report_ms": null,
+        "first_useful_result_ms": null
+      },
+      "nvidia_http_attempts": 0,
+      "jev_http_attempts": 0,
+      "refused_http_sends": 0,
+      "source_metrics": {
+        "requests": 0,
+        "fetches": 0,
+        "cache_hits": 0,
+        "coalesced": 0,
+        "retries": 0,
+        "rate_limits": 0,
+        "missing": 0
+      },
+      "fixture_cache_sha256": null,
+      "input_fixture_cache_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "exclusion_reason": "failed_or_unstarted_attempt"
+    }
+  ],
+  "session_startups": [
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "startup-c06c7ed08817",
+      "status": "completed",
+      "duration_ms": 45999.117,
+      "trace_duration_ms": 45951.197,
+      "warmup_requests": 0,
+      "network_policy": "refused",
+      "initially_loaded_modules": [],
+      "trace_path": "results/benchmarks/c01-live-graph-20261015/startup_trace.json"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "startup-51196a39598a",
+      "status": "completed",
+      "duration_ms": 41471.989,
+      "trace_duration_ms": 41430.413,
+      "warmup_requests": 0,
+      "network_policy": "refused",
+      "initially_loaded_modules": [],
+      "trace_path": "results/benchmarks/c01-live-graph-20261015-retry/startup_trace.json"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "startup-f843dc82fd57",
+      "status": "completed",
+      "duration_ms": 79011.837,
+      "trace_duration_ms": 78878.195,
+      "warmup_requests": 0,
+      "network_policy": "refused",
+      "initially_loaded_modules": [],
+      "trace_path": "results/benchmarks/c01-live-graph-20261016/startup_trace.json"
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180",
+      "run_id": "startup-7fd30c620837",
+      "status": "completed",
+      "duration_ms": 57142.993,
+      "trace_duration_ms": 57075.273,
+      "warmup_requests": 0,
+      "network_policy": "refused",
+      "initially_loaded_modules": [],
+      "trace_path": "results/benchmarks/c01-live-graph-20261016-timeout180/startup_trace.json"
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "run_id": "startup-0ae4076b7771",
+      "status": "completed",
+      "duration_ms": 174748.64,
+      "trace_duration_ms": 174575.411,
+      "warmup_requests": 0,
+      "network_policy": "refused",
+      "initially_loaded_modules": [
+        "tradingagents.default_config"
+      ],
+      "trace_path": "results/benchmarks/c01-live-graph-20261016-timeout180-completion/startup_trace.json"
+    }
+  ],
+  "failure_diagnostics": [
+    {
+      "session": "c01-live-graph-20261015",
+      "run_id": "live-c06c7ed08817-cold_fixture_cache-02",
+      "node": "Bear Researcher",
+      "transport_error_type": "ReadTimeout",
+      "transport_duration_ms": 60072.359,
+      "http_response_observed": false
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "run_id": "live-51196a39598a-cold_fixture_cache-02",
+      "node": "Market Analyst",
+      "transport_error_type": "ReadTimeout",
+      "transport_duration_ms": 60054.749,
+      "http_response_observed": false
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "run_id": "live-f843dc82fd57-cold_fixture_cache-02",
+      "node": "Bull Researcher",
+      "transport_error_type": "ReadTimeout",
+      "transport_duration_ms": 60066.049,
+      "http_response_observed": false
+    }
+  ],
+  "all_attempts_ledger": [
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261014",
+      "status": "finished",
+      "registered_runs": 6,
+      "observed_run_statuses": {
+        "completed": 3,
+        "not_started": 2,
+        "failed": 1
+      },
+      "nvidia_http_attempts": 96,
+      "jev_http_attempts": 26,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 96,
+        "typesafe": 26
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 5,
+      "jev_reserved_worst_case_usd": 0.071565312,
+      "jev_reported_estimated_cost_usd": 0.0013429499999999999,
+      "nvidia_cost_usd": null
+    },
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261016-timeout180",
+      "status": "finished",
+      "registered_runs": 4,
+      "observed_run_statuses": {
+        "completed": 3,
+        "failed": 1
+      },
+      "nvidia_http_attempts": 123,
+      "jev_http_attempts": 31,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 123,
+        "typesafe": 31
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 1,
+      "jev_reserved_worst_case_usd": 0.085327872,
+      "jev_reported_estimated_cost_usd": 0.00156471,
+      "nvidia_cost_usd": null
+    },
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261015",
+      "status": "finished",
+      "registered_runs": 4,
+      "observed_run_statuses": {
+        "failed": 1,
+        "not_started": 3
+      },
+      "nvidia_http_attempts": 29,
+      "jev_http_attempts": 0,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 29
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 0,
+      "jev_reserved_worst_case_usd": 0.0,
+      "jev_reported_estimated_cost_usd": 0.0,
+      "nvidia_cost_usd": null
+    },
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261015-retry",
+      "status": "finished",
+      "registered_runs": 4,
+      "observed_run_statuses": {
+        "failed": 1,
+        "not_started": 3
+      },
+      "nvidia_http_attempts": 17,
+      "jev_http_attempts": 0,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 17
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 0,
+      "jev_reserved_worst_case_usd": 0.0,
+      "jev_reported_estimated_cost_usd": 0.0,
+      "nvidia_cost_usd": null
+    },
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261016",
+      "status": "finished",
+      "registered_runs": 4,
+      "observed_run_statuses": {
+        "failed": 1,
+        "not_started": 3
+      },
+      "nvidia_http_attempts": 23,
+      "jev_http_attempts": 0,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 23
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 0,
+      "jev_reserved_worst_case_usd": 0.0,
+      "jev_reported_estimated_cost_usd": 0.0,
+      "nvidia_cost_usd": null
+    },
+    {
+      "directory": "results/benchmarks/c01-live-graph-20261016-timeout180-completion",
+      "status": "finished",
+      "registered_runs": 3,
+      "observed_run_statuses": {
+        "completed": 3
+      },
+      "nvidia_http_attempts": 83,
+      "jev_http_attempts": 24,
+      "count_basis": "completed_session_send_guards",
+      "trace_http_by_provider": {
+        "nvidia": 83,
+        "typesafe": 24
+      },
+      "send_count_reconciliation": {
+        "nvidia_guard_minus_trace": 0,
+        "jev_guard_minus_trace": 0
+      },
+      "refused_http_sends": 0,
+      "jev_reserved_worst_case_usd": 0.066060288,
+      "jev_reported_estimated_cost_usd": 0.001297716,
+      "nvidia_cost_usd": null
+    }
+  ],
+  "component_probes": {
+    "typesafe": {
+      "summary_path": "results/benchmarks/c01-jev-20261014/summary.json",
+      "summary_sha256": "5964638e95ee1b054a1bab39de6e85ed74feac1b0c12f8f888b3bde314360069",
+      "http_attempts": 6,
+      "jev_reserved_worst_case_usd": 0.016515072,
+      "jev_reported_estimated_cost_usd": 7.812e-05,
+      "sample_statuses": {
+        "ok": 6
+      }
+    },
+    "nvidia": {
+      "summary_path": "results/benchmarks/c01-nvidia-20261014/summary.json",
+      "summary_sha256": "4e55b444cbc9e58a7f6581a99b28d228e909ad9f9cd1c58ce3a03889a5cddd97",
+      "http_attempts": 6,
+      "jev_reserved_worst_case_usd": null,
+      "jev_reported_estimated_cost_usd": null,
+      "sample_statuses": {
+        "ok": 6
       }
     }
-  ]
+  },
+  "continuation_allowance": {
+    "nvidia_http_attempts": 192,
+    "maximum_nvidia_http_attempts": 192,
+    "within_cap": true,
+    "sessions": [
+      "c01-live-graph-20261016-timeout180",
+      "c01-live-graph-20261015",
+      "c01-live-graph-20261015-retry",
+      "c01-live-graph-20261016"
+    ],
+    "basis": "All supplied graph sessions except the original old attempt and sessions under a later registered allowance; includes failed continuation and retry sends."
+  },
+  "totals_including_excluded_and_components": {
+    "nvidia_http_attempts": 377,
+    "jev_http_attempts": 87,
+    "ledger_complete": true,
+    "graph_counts": {
+      "logical_llm_invocations": 377,
+      "llm_generation_attempts": 377,
+      "observed_http_attempts": 452,
+      "refused_http_sends": 6,
+      "jev_logical_calls": 81,
+      "http_by_provider": {
+        "nvidia": 371,
+        "typesafe": 81
+      },
+      "usage": {
+        "reported_input_tokens": 1219758,
+        "reported_output_tokens": 157020,
+        "reported_cached_input_tokens": 61776,
+        "usage_missing_calls": 9,
+        "cached_usage_missing_calls": 9,
+        "finish_reason_missing_calls": 105
+      },
+      "finish_reasons": {
+        "tool_calls": 211,
+        "stop": 50,
+        "length": 11
+      },
+      "reported_length_finish_count": 11,
+      "finish_reason_coverage": "partial"
+    },
+    "jev_reported_estimated_cost_usd": 0.0042834959999999995,
+    "jev_reserved_worst_case_usd": 0.239468544,
+    "known_jev_reservation_subtotal_usd": 0.239468544,
+    "reservation_ledger_status": "complete",
+    "jev_authorized_cap_usd": 1.0,
+    "within_jev_cap": true,
+    "nvidia_cost_usd": null,
+    "total_dollar_cost_usd": null,
+    "cost_status": "Jev reported usage estimate only; NVIDIA dollars unknown. Failed and background attempts included via send guards."
+  },
+  "coverage": {
+    "first_useful_result_ms": null,
+    "browser_render": "unobserved",
+    "quick_brief": "path_absent",
+    "original_source_full_material_validation": "unobserved",
+    "quality_or_speedup_claim": "not_qualified",
+    "p95": "not_qualified_at_n3"
+  },
+  "provenance": [
+    {
+      "session": "c01-live-graph-20261014",
+      "source_revision": "be0c3e1ea348a3d262bc8712b54993553791ea1b",
+      "source_dirty": true,
+      "source_tree_sha256": "4cbb23d74687314550390e3f18e069cecec456542aec53cf369573be25fe78c1",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": null
+    },
+    {
+      "session": "c01-live-graph-20261015",
+      "source_revision": "bf16c094f07621af7564d3b3ca79969dc2b57677",
+      "source_dirty": true,
+      "source_tree_sha256": "c48aec3715d26b42ee9bf5af38de29b24372e8d72540f8f14239bd85f684c21d",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": "16fc4308a70d316bd71ba37e5b0c89e84b3701bfd4cad6836839ad641bb9830b"
+    },
+    {
+      "session": "c01-live-graph-20261015-retry",
+      "source_revision": "bf16c094f07621af7564d3b3ca79969dc2b57677",
+      "source_dirty": true,
+      "source_tree_sha256": "f601a08ce77bc7e43db2b02770eb42a8b3bd0301f9fb739e920e4b63c148d7b6",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": "16fc4308a70d316bd71ba37e5b0c89e84b3701bfd4cad6836839ad641bb9830b"
+    },
+    {
+      "session": "c01-live-graph-20261016",
+      "source_revision": "bf16c094f07621af7564d3b3ca79969dc2b57677",
+      "source_dirty": true,
+      "source_tree_sha256": "612cb7cd168337eb82261caa18e913c0fd51cde87d506a1fc5880464e6697f14",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": "16fc4308a70d316bd71ba37e5b0c89e84b3701bfd4cad6836839ad641bb9830b"
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180",
+      "source_revision": "bf16c094f07621af7564d3b3ca79969dc2b57677",
+      "source_dirty": true,
+      "source_tree_sha256": "b147d393058834cfdb766fd13f6d06f85ac1deedc4b54d4b99130caadf491ab7",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "4f19e627f2a0cb48ceb108e1e0100775d934adedfadce449026c156462cfe4ac",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": "16fc4308a70d316bd71ba37e5b0c89e84b3701bfd4cad6836839ad641bb9830b"
+    },
+    {
+      "session": "c01-live-graph-20261016-timeout180-completion",
+      "source_revision": "bf16c094f07621af7564d3b3ca79969dc2b57677",
+      "source_dirty": true,
+      "source_tree_sha256": "f072ac45c1f369231dc87ee5ae30b9086529a64e525da30dbb5847fcbd6208b3",
+      "dependency_lock_sha256": "6d89ab78132f9b9ec30fc6d4f449be0fa61892a4a9de59b70f7f674ee128bce4",
+      "configuration_sha256": "4f19e627f2a0cb48ceb108e1e0100775d934adedfadce449026c156462cfe4ac",
+      "workload_sha256": "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6",
+      "corpus_sha256": "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142",
+      "timing_protocol_sha256": "16fc4308a70d316bd71ba37e5b0c89e84b3701bfd4cad6836839ad641bb9830b"
+    }
+  ],
+  "attribution_correction": "101 uniquely matched original trace parent links repaired offline, exact originals retained; timing/status/usage/sends unchanged.",
+  "raw_evidence_directories": [
+    "results/benchmarks/c01-offline-20261014",
+    "results/benchmarks/c01-jev-20261014",
+    "results/benchmarks/c01-nvidia-20261014",
+    "results/benchmarks/c01-live-graph-20261014",
+    "results/benchmarks/c01-live-graph-20261015",
+    "results/benchmarks/c01-live-graph-20261015-retry",
+    "results/benchmarks/c01-live-graph-20261016",
+    "results/benchmarks/c01-live-graph-20261016-timeout180",
+    "results/benchmarks/c01-live-graph-20261016-timeout180-completion"
+  ],
+  "derived_full_summary": "results/benchmarks/c01-live-graph-20261016-timeout180-completion/recovery-summary.json",
+  "verification": {
+    "wsl_trace_graph_guard_tests_passed": 68,
+    "standalone_aggregation_tests_passed": 7,
+    "ruff": "passed",
+    "live_continuation_completions": 3,
+    "date": "2026-10-16",
+    "wsl_focused_tests_passed": 75,
+    "timeout_and_aggregation_tests_passed": 44,
+    "original_timeout_completions_20261016": 0,
+    "recovery_completions_20261016": 3,
+    "send_ledgers_reconciled": true,
+    "cache_seed_pairs_verified": 2,
+    "parsed_json_files": 243,
+    "credential_scanned_files": 776,
+    "credential_matches": 0,
+    "diff_whitespace": "passed",
+    "live_work_running": false,
+    "audit_path": "results/benchmarks/c01-audit-20261016.json",
+    "recovery_completion": {
+      "date": "2026-10-16/17 (Asia/Calcutta)",
+      "focused_runner_and_summarizer_tests_passed": 57,
+      "full_non_integration_suite": {
+        "passed": 2081,
+        "skipped": 1,
+        "deselected": 1,
+        "subtests_passed": 100,
+        "skip": "optional langchain_aws (Bedrock) absent"
+      },
+      "ruff": "passed",
+      "diff_whitespace": "passed",
+      "cache_seed_pairs_verified": 3,
+      "send_ledgers_reconciled": true,
+      "completion_http_200_responses": {
+        "nvidia": 83,
+        "typesafe": 24
+      },
+      "credential_scanned_files": 827,
+      "credential_matches": 0,
+      "parsed_c01_json_files": 280,
+      "summarizer_cli_reproduces_recovery_summary": true,
+      "live_work_running": false
+    }
+  },
+  "remaining_acceptance": "None for the C01 diagnostic baseline under the 180-second recovery policy. The 60-second cohort stays incomplete and separate. UI first-useful-result, real-source timing, source validation, quality and qualified tails remain for later tasks.",
+  "changed_source_paths_original_to_latest": [
+    "cli/stats_handler.py",
+    "scripts/benchmark_c01.py",
+    "scripts/benchmark_jev_c01.py",
+    "scripts/benchmark_live_graph_c01.py",
+    "scripts/repair_c01_trace_parents.py",
+    "scripts/summarize_c01_baseline.py",
+    "tradingagents/graph/trading_graph.py",
+    "tradingagents/llm_clients/anthropic_client.py",
+    "tradingagents/llm_clients/azure_client.py",
+    "tradingagents/llm_clients/bedrock_client.py",
+    "tradingagents/llm_clients/google_client.py",
+    "tradingagents/llm_clients/openai_client.py",
+    "tradingagents/llm_clients/telemetry.py",
+    "tradingagents/telemetry.py"
+  ],
+  "baseline_cohort": "recovery_180s_timeout",
+  "later_nvidia_allowances": [
+    {
+      "name": "recovery_completion_20261016",
+      "nvidia_http_attempts": 83,
+      "maximum_nvidia_http_attempts": 144,
+      "within_cap": true,
+      "sessions": [
+        "c01-live-graph-20261016-timeout180-completion"
+      ],
+      "registration_path": "results/benchmarks/c01-allowance-20261016-completion.json",
+      "registration_sha256": "13b5e33a0538181d89b50ac4951cb9d67c194f23faac837b4679f7f2c0eee19b"
+    }
+  ],
+  "original_60s_cohort": {
+    "nvidia_request_timeout_seconds": 60,
+    "baseline_status": "incomplete_or_not_comparable",
+    "qualification_gaps": [
+      "three_complete_pairs_not_achieved"
+    ],
+    "qualified_pair_count": 1,
+    "registered_pair_count": 3,
+    "pairs": [
+      {
+        "pair": 1,
+        "session": "c01-live-graph-20261014",
+        "sessions": {
+          "cold_fixture_cache": "c01-live-graph-20261014",
+          "warm_fixture_cache": "c01-live-graph-20261014"
+        },
+        "status": "complete",
+        "seed_link": "unrecorded",
+        "runs": [
+          "live-graph-cold_fixture_cache-01",
+          "live-graph-warm_fixture_cache-01"
+        ]
+      },
+      {
+        "pair": 2,
+        "session": "c01-live-graph-20261016",
+        "sessions": {
+          "cold_fixture_cache": "c01-live-graph-20261016",
+          "warm_fixture_cache": "c01-live-graph-20261016"
+        },
+        "status": "incomplete",
+        "seed_link": null,
+        "runs": [
+          "live-f843dc82fd57-cold_fixture_cache-02",
+          "live-f843dc82fd57-warm_fixture_cache-02"
+        ]
+      },
+      {
+        "pair": 3,
+        "session": "c01-live-graph-20261016",
+        "sessions": {
+          "cold_fixture_cache": "c01-live-graph-20261016",
+          "warm_fixture_cache": "c01-live-graph-20261016"
+        },
+        "status": "incomplete",
+        "seed_link": null,
+        "runs": [
+          "live-f843dc82fd57-cold_fixture_cache-03",
+          "live-f843dc82fd57-warm_fixture_cache-03"
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "mode": "cold_fixture_cache",
+        "n": 1,
+        "medians": {
+          "research_setup_to_persist_ms": 189327.307,
+          "end_to_end_wall_ms": 287181.849,
+          "pre_setup_ms": 97847.647,
+          "generated_report_ms": 10546.764
+        },
+        "top_three_latency_contributors": [
+          {
+            "node": "Bull Researcher",
+            "median_inclusive_ms": 36621.353,
+            "n": 1
+          },
+          {
+            "node": "Bear Researcher",
+            "median_inclusive_ms": 32285.879,
+            "n": 1
+          },
+          {
+            "node": "Market Analyst",
+            "median_inclusive_ms": 29913.308,
+            "n": 1
+          }
+        ],
+        "counts": {
+          "logical_llm_invocations": 36,
+          "llm_generation_attempts": 36,
+          "observed_http_attempts": 49,
+          "refused_http_sends": 0,
+          "jev_logical_calls": 13,
+          "http_by_provider": {
+            "nvidia": 36,
+            "typesafe": 13
+          },
+          "usage": {
+            "reported_input_tokens": 136961,
+            "reported_output_tokens": 15455,
+            "reported_cached_input_tokens": 27456,
+            "usage_missing_calls": 0,
+            "cached_usage_missing_calls": 0,
+            "finish_reason_missing_calls": 36
+          },
+          "finish_reasons": {},
+          "reported_length_finish_count": 0,
+          "finish_reason_coverage": "partial"
+        },
+        "tail": "unqualified_small_n",
+        "first_useful_result_ms": null
+      },
+      {
+        "mode": "warm_fixture_cache",
+        "n": 1,
+        "medians": {
+          "research_setup_to_persist_ms": 175018.783,
+          "end_to_end_wall_ms": 175285.055,
+          "pre_setup_ms": 256.833,
+          "generated_report_ms": 24210.419
+        },
+        "top_three_latency_contributors": [
+          {
+            "node": "Fundamentals Analyst",
+            "median_inclusive_ms": 42183.163,
+            "n": 1
+          },
+          {
+            "node": "Market Analyst",
+            "median_inclusive_ms": 40114.521,
+            "n": 1
+          },
+          {
+            "node": "Bear Researcher",
+            "median_inclusive_ms": 37940.038,
+            "n": 1
+          }
+        ],
+        "counts": {
+          "logical_llm_invocations": 36,
+          "llm_generation_attempts": 36,
+          "observed_http_attempts": 42,
+          "refused_http_sends": 0,
+          "jev_logical_calls": 6,
+          "http_by_provider": {
+            "nvidia": 36,
+            "typesafe": 6
+          },
+          "usage": {
+            "reported_input_tokens": 136461,
+            "reported_output_tokens": 16316,
+            "reported_cached_input_tokens": 29744,
+            "usage_missing_calls": 0,
+            "cached_usage_missing_calls": 0,
+            "finish_reason_missing_calls": 36
+          },
+          "finish_reasons": {},
+          "reported_length_finish_count": 0,
+          "finish_reason_coverage": "partial"
+        },
+        "tail": "unqualified_small_n",
+        "first_useful_result_ms": null
+      }
+    ],
+    "research_configuration": {
+      "comparable": true,
+      "configuration_hashes": [
+        "ec019ecf7ce05475510627a962ccc428d2d77dc4625b381829b6da919df801c9"
+      ],
+      "workload_hashes": [
+        "aab5558ceaed16da56b18c5748f11e6b260abcd1e0457c6cf96b2b5609f83ec6"
+      ],
+      "corpus_hashes": [
+        "aa9c9d3839d5b9531285a01c908367f1f2ecfea1e5ec3927d44d819c1a99e142"
+      ],
+      "registration_differences": {}
+    },
+    "selected_runs": [
+      {
+        "session": "c01-live-graph-20261014",
+        "run_id": "live-graph-cold_fixture_cache-01",
+        "pair": 1,
+        "mode": "cold_fixture_cache",
+        "status": "completed",
+        "rating": "Sell",
+        "claim_check_section": "present",
+        "timing": {
+          "end_to_end_wall_ms": 287181.849,
+          "legacy_wall_ms": 287181.849,
+          "research_setup_to_persist_ms": 189327.307,
+          "pre_setup_ms": 97847.647,
+          "measurement_start_basis": "first_setup_span",
+          "generated_report_ms": 10546.764,
+          "first_useful_result_ms": null
+        },
+        "nvidia_http_attempts": 36,
+        "jev_http_attempts": 13,
+        "refused_http_sends": 0,
+        "source_metrics": {
+          "requests": 27,
+          "fetches": 27,
+          "cache_hits": 0,
+          "coalesced": 0,
+          "retries": 0,
+          "rate_limits": 0,
+          "missing": 0
+        },
+        "fixture_cache_sha256": null,
+        "input_fixture_cache_sha256": null,
+        "exclusion_reason": null
+      },
+      {
+        "session": "c01-live-graph-20261014",
+        "run_id": "live-graph-warm_fixture_cache-01",
+        "pair": 1,
+        "mode": "warm_fixture_cache",
+        "status": "completed",
+        "rating": "Hold",
+        "claim_check_section": "present",
+        "timing": {
+          "end_to_end_wall_ms": 175285.055,
+          "legacy_wall_ms": 175285.055,
+          "research_setup_to_persist_ms": 175018.783,
+          "pre_setup_ms": 256.833,
+          "measurement_start_basis": "first_setup_span",
+          "generated_report_ms": 24210.419,
+          "first_useful_result_ms": null
+        },
+        "nvidia_http_attempts": 36,
+        "jev_http_attempts": 6,
+        "refused_http_sends": 0,
+        "source_metrics": {
+          "requests": 28,
+          "fetches": 4,
+          "cache_hits": 24,
+          "coalesced": 0,
+          "retries": 0,
+          "rate_limits": 0,
+          "missing": 0
+        },
+        "fixture_cache_sha256": null,
+        "input_fixture_cache_sha256": null,
+        "exclusion_reason": null
+      }
+    ],
+    "interpretation": "Registered first; three independent 60-second read timeouts. Retained, not pooled."
+  },
+  "recovery_cohort_counts": {
+    "logical_llm_invocations": 187,
+    "llm_generation_attempts": 187,
+    "observed_http_attempts": 242,
+    "refused_http_sends": 0,
+    "jev_logical_calls": 55,
+    "http_by_provider": {
+      "nvidia": 187,
+      "typesafe": 55
+    },
+    "usage": {
+      "reported_input_tokens": 665178,
+      "reported_output_tokens": 88169,
+      "reported_cached_input_tokens": 4576,
+      "usage_missing_calls": 0,
+      "cached_usage_missing_calls": 0,
+      "finish_reason_missing_calls": 0
+    },
+    "finish_reasons": {
+      "tool_calls": 137,
+      "stop": 41,
+      "length": 9
+    },
+    "reported_length_finish_count": 9,
+    "finish_reason_coverage": "reported"
+  },
+  "recovery_nvidia_responses": {
+    "successful": 206,
+    "max_ms": 125456.022,
+    "over_60_seconds": 11,
+    "scope": "Both 180-second recovery attempts, successful NVIDIA responses only"
+  },
+  "derived_original_cohort_summary": "results/benchmarks/c01-live-graph-20261016-timeout180-completion/combined-summary.json"
 }

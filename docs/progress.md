@@ -1,14 +1,14 @@
 # Crossclock progress
 
-Last updated: 14 October 2026 (Asia/Calcutta)
+Last updated: 16 October 2026 (Asia/Calcutta)
 Execution plan: [plan.md](plan.md)  
 Baseline reviewed: `4b2a3f781fdda6cb3a7594c3191122d4fe5b6836`
 
 ## Current position
 
-The measurement sprint started on 14 October 2026. C01 tracing, deterministic fixtures and bounded live model measurements are implemented and verified. Three graph reports completed before the local NVIDIA request guard stopped the run. [The benchmark record](benchmarks/c01.md) distinguishes fixture behavior, live component probes and live models on a synthetic corpus. C01 remains open because only one of three registered cold/warm pairs completed.
+The measurement sprint started on 14 October 2026. **C01 is complete as a diagnostic baseline** under the registered 180-second NVIDIA timeout: three matched cold/warm pairs on one configuration, with every warm run's cache seed verified by hash. On 16 October the owner approved a new 144-send NVIDIA allowance. A seeded warm run finished recovery pair 2 and pair 3 ran cold and warm, using 83 sends and 24 Jev sends with no failure. Median research time to a persisted report was 371.908 s cold and 435.775 s warm (n=3 each). The 10 ms synthetic source cache cannot explain that difference, so there is no cache-speed claim. The original 60-second cohort keeps one complete pair and is not pooled. [The benchmark record](benchmarks/c01.md) has the details. No live calls remain running.
 
-Active task: **C01, persist a timing/cost trace and establish the baseline**. Complete the matched baseline sample set within a registered available NVIDIA allowance. The first selected experiment is shorter source-grounded bull/bear arguments, with a held-out claim/coverage check. Run **C02, user-task and data-access discovery**, alongside it when the project owner is available.
+Next tasks: **C03, deadlines, retries, cancel and partial states**, and **C04, shared evidence and bounded retrieval**, both waited on C01. The selected shorter, source-grounded bull/bear experiment compares against the 180-second baseline after a held-out claim/coverage set exists. Run **C02, user-task and data-access discovery**, alongside them when the project owner is available.
 
 The initial audience remains an NSE watchlist investor hypothesis, with US-equity validation. The owner authorized limited NVIDIA quota use and Jev up to US$1. Keys were checked without displaying them and both live services responded. No achieved product speedup, customer validation or real-source completion-time claim exists.
 
@@ -29,7 +29,7 @@ Evidence labels are separate: **source reviewed**, **external source reviewed**,
 | ID | Task | Status | Owner | Evidence / next action |
 | --- | --- | --- | --- | --- |
 | C00 | Repository research, plan and progress tracker | Complete | Codex | [Plan](plan.md), linked repository evidence and dated external sources; documentation only |
-| C01 | Instrumentation and baseline | In progress | Codex | [Tracing and initial diagnostic](benchmarks/c01.md): 24 offline samples; six live probes per provider; three graph completions, one local guard failure, two unstarted; 111 final focused tests pass; three paired baseline repetitions remain incomplete |
+| C01 | Instrumentation and baseline | Complete | Codex; completed in Claude Code | [Benchmark record](benchmarks/c01.md): 180-second cohort has three matched pairs with verified cache seeds; 60-second cohort keeps one pair, not pooled. Across all six graph attempts: 9 completions, 5 failures, 11 unstarted. Diagnostic scope only: synthetic sources, no UI first-useful-result, quality or tail claim |
 | C02 | User tasks and data-access inventory | Not started | Unassigned: product owner | Validate target cohort, prepare three pilot tasks, record access/rights and any actual user feedback |
 | C03 | Deadlines, retries, cancel and partial states | Not started | Unassigned: engineering | After C01; enforce budgets across SDK and outer retries; verify cancellation/restart and coverage labels |
 | C04 | Shared evidence and bounded retrieval | Not started | Unassigned: engineering | After C01; prototype one ticker's source reuse, freshness/as-of enforcement and in-flight deduplication |
@@ -69,15 +69,15 @@ Targets below are proposals from the plan. A blank baseline is unknown, never ze
 | --- | --- | --- | --- |
 | Warm first useful facts, p50 / p95 | Not measured | Not implemented | <=5 s / <=10 s for the proposed Quick workflow |
 | Quick completed brief, p50 / p95 | No Quick path | Not implemented | <=30 s / <=60 s under the registered workload |
-| Standard complete report, p50 / p95 | Initial live-model synthetic-corpus diagnostic: two cold completions (287.182 / 178.384 s), one warm (175.285 s); p95 unqualified | Not measured | Complete paired sample set before claiming >=30% / >=20% improvement |
-| Cold first visit and final report | Not measured | Not measured | Measure separately from warm cache results |
+| Standard complete report, p50 / p95 | 180-second baseline, research setup to persisted report on synthetic sources: cold median 371.908 s (341.489-417.197 s), warm median 435.775 s (285.266-494.657 s), n=3 each; p95 unqualified. Original 60-second cohort: one matched pair, cold 189.327 s / warm 175.019 s, kept separate | Not measured | Compare candidates against the 180-second baseline under the same policy; do not pool timeout variants |
+| Cold first visit and final report | Separately measured dependency startup: 79.012 s, 57.143 s and 174.749 s; browser first visit unknown | Not measured | Keep startup separate from research and measure UI rendering |
 | Queue wait and 10-symbol completion | Not measured | Not measured | Identify whether provider limits or serial scheduling dominate |
-| Report cost and failed-run spend | Jev estimate $0.00142107 total for this attempt; NVIDIA dollar cost unknown, 102 sends including probes | Not measured | Preserve unknown usage on guard-failed generations; [budget record](benchmarks/c01.md) |
+| Report cost and failed-run spend | All attempts/probes: Jev reported estimate $0.00428350, conservative reservation $0.239468544; NVIDIA dollar cost unknown, 377 sends total; 229 NVIDIA / 55 Jev sends on 16 October | Not measured | Guard/trace counts reconcile; cumulative Jev remains below US$1; 192-send continuation used up, 83 of 144 used in the completion allowance; [budget record](benchmarks/c01.md) |
 | Source-request count / cache eligibility | Not measured | Not measured | Demonstrate fewer redundant requests with freshness preserved |
 | Supported or explicitly unsupported material claims | Not audited | Not audited | >=95% on initial frozen claim set; distinguish citation presence from correctness |
 | Audited material numeric errors | Not audited | Not audited | Zero; any material mismatch blocks the release candidate |
 | Material-event recall / claim accuracy | Not audited | Not audited | No more than five-percentage-point drop versus full workflow; assess uncertainty |
-| Completion / partial / failure / deadline-miss rates | Initial synthetic-source live workload: 3 completed, 1 local guard failure, 2 unstarted of 6 registered; deadlines unqualified | Not measured | Publish alongside latency; these are diagnostic outcomes, not operational rates |
+| Completion / partial / failure / deadline-miss rates | All six graph attempts: 9 completed, 5 failed (two local guards, three 60-second response timeouts), 11 unstarted; deadlines unqualified | Not measured | Publish alongside latency; historical/repeated attempts are not operational rates |
 | Human research-task time | No participants observed | No participants observed | Pilot median improvement >=30%; >=4/5 complete each task unaided |
 
 Use at least three paired repetitions per instrument/cache regime for diagnosis, and at least 100 comparable runs per claimed mode/regime before reporting p95 as qualified. Live runs require a recorded spending cap. See [measurement rules](plan.md#measurement-and-quality-gates) for the full protocol.
@@ -89,20 +89,23 @@ Use at least three paired repetitions per instrument/cache regime for diagnosis,
 | Main user segment | NSE investor hypothesis; US validation retained | C02 observes actual tasks and willingness to return/pay |
 | First release setting | Local application assumed | Confirm whether local use meets pilot needs before designing hosted accounts |
 | Provider/model and budget | Nemotron 3 Super and Jev 1.13 pinned; Jev total cap US$1; NVIDIA remaining quota unknown | [Registered limits and exact settings](benchmarks/c01.md#registered-workloads-and-budgets) |
-| Current report time/cost | Initial diagnostic recorded; comparable repetition set incomplete | [Measured limits and remaining acceptance](benchmarks/c01.md#attribution-correction-and-remaining-acceptance); no speedup claim |
+| Current report time/cost | 180-second baseline: three matched pairs, about 6-7 minutes per synthetic-source report; 11 of 206 recovery responses took over 60 seconds (maximum 125.456 s); cumulative usage reconciled | [Recovery completion](benchmarks/c01.md#recovery-completion-16-october); no speedup or cache-benefit claim |
 | Historical and transcript coverage | Incomplete/unverified | C02/C09 record source availability, knowledge times and reuse permissions |
 | Data distribution rights | No deployment-specific entitlement review performed | Check actual source agreements before hosting or redistributing data |
-| Named owners/start date | C01 owned by Codex; started 14 October 2026 | Product/study owners remain open |
+| Named owners/start date | C01 owned by Codex; started 14 October 2026, completed 16 October 2026 | Product/study owners remain open; C03/C04 unassigned |
 | Quality reference set | Not created | Freeze questions, claims, material events and held-out evaluation cases before optimization |
 | Existing API keys/services | Both keys confirmed locally; six successful probes per provider | Secrets stay in ignored env files; trace metadata excludes credentials |
 
-These are open prerequisites, not failed attempts. No task is currently marked Blocked.
+The open decisions above are prerequisites. C01 has no remaining dependency.
+Any further live run needs its own recorded allowance: the 192-send
+continuation is used up, and the 144-send completion allowance belonged to its
+single attempt.
 
 ## Gate ledger
 
 | Gate | Current verdict | Required evidence |
 | --- | --- | --- |
-| G1: reproducible baseline | Initial diagnostic only; incomplete | Complete three paired repetitions, separate process initialization, preserve configuration/trace provenance and coverage gaps |
+| G1: reproducible baseline | Passed for the synthetic-source diagnostic baseline: three matched 180-second pairs, verified cache seeds, reconciled ledgers; the 60-second cohort stays separate | Real-source timing, UI first-useful-result and the NSE/US instrument matrix remain unmeasured; retain source-provenance limits, failures and coverage gaps |
 | G2: data and execution correctness | Not evaluated | Freshness/as-of, duplicate-request, isolation, deadline, cancel and resume cases |
 | G3: useful speed improvement | Not evaluated | Matched latency/cost results plus coverage and quality checks |
 | G4: user value | Not evaluated | Observed task completion/time and reasons users would return |
@@ -122,6 +125,13 @@ Planning completion passes none of the product gates.
 | 2026-10-14 | Verified fixtures and live access within owner-authorized limits | 24 offline samples with no failures; six successful Nemotron and six Jev probes; Jev estimated $0.00007812; raw evidence ignored locally |
 | 2026-10-14 | Ran bounded live graph diagnostic and recorded the stop | Three completions, one local NVIDIA send-guard failure, two unstarted; 102 total NVIDIA sends; 32 Jev sends estimated $0.00142107; no account quota change |
 | 2026-10-14 | Corrected callback ancestry and verified regressions | 2,018 broad tests passed with one compatibility failure subsequently fixed; 111 final targeted tests passed; 101 raw parent links derived offline with exact originals retained; lint/whitespace checks passed |
+| 2026-10-15 | Added startup separation, pair selection, cache journaling and cumulative budget qualification | 68 WSL trace/graph/guard tests and 7 standalone aggregation tests passed; exact config/corpus/workload/lock match; reviewed instrumentation revisions and old dirty-source limitation documented |
+| 2026-10-15 | Attempted the two remaining pairs, then made one bounded fresh retry | Cold 2 timed out in Bear Researcher, then Market Analyst; 29 + 17 NVIDIA sends, zero Jev sends; each attempt retained three unstarted rows and stopped new sends |
+| 2026-10-15 | Audited all evidence and updated the combined ledger | NVIDIA 148 / Jev 32 total sends including probes; Jev estimate $0.00142107, reserve $0.088080384; all guard/trace counts reconcile; C01 and G1 remain incomplete with two pairs outstanding |
+| 2026-10-16 | Retried the original policy, then registered configurable 180-second timeout recovery | Original attempt timed out in Bull Researcher after 23 sends. Recovery persisted three reports and one matched pair; six successful responses exceeded 60 seconds. Final warm run stopped at the local guard; timeout cohorts remain separate |
+| 2026-10-16 | Verified timeout controls and reconciled all five attempts | 75 preflight tests, then 44 timeout/aggregation tests passed; Ruff passed. Today: 146 NVIDIA / 31 Jev sends. Cumulative: 294 NVIDIA / 63 Jev; Jev estimate $0.00298578, reservation $0.173408256. Local continuation ceiling exhausted; C01/G1 remain incomplete |
+| 2026-10-16 | Added seeded warm completion and per-allowance accounting | Runner `--warm-seed` refuses any hash mismatch before sending; summarizer `--select` pairs across attempts only with a matching cache hash, and `--allowance` caps each allowance separately. 57 focused tests passed; Ruff passed |
+| 2026-10-16 | Completed the 180-second baseline under a new owner-approved 144-send allowance | Seeded warm 2, cold 3 and warm 3 completed: 83 NVIDIA / 24 Jev sends, all HTTP 200. Three matched pairs; cold median 371.908 s, warm 435.775 s; no cache-speed claim. Cumulative: 377 NVIDIA / 87 Jev; Jev estimate $0.00428350, reservation $0.239468544. Full non-integration suite: 2,081 passed, 1 skipped (optional Bedrock). Zero credential matches in 827 scanned files. C01 Complete, G1 passed for diagnostic scope |
 
 ## Next update template
 

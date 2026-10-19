@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import copy
 import hashlib
+import importlib
 import json
 import logging
 import os
@@ -21,9 +22,10 @@ import time
 from collections import defaultdict
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -34,6 +36,7 @@ from scripts.benchmark_c01 import (  # noqa: E402 - script execution needs the c
     FixtureSource,
     fingerprint,
     load_fixture,
+    offline_network,
     provenance,
     write_json,
 )
@@ -41,7 +44,11 @@ from scripts.benchmark_c01 import (  # noqa: E402 - script execution needs the c
 NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
 JEV_MODEL = "jev-1.13.0"
 NVIDIA_MAX_ATTEMPTS = 96
-JEV_CAP_USD = Decimal("0.98")
+NVIDIA_AUTHORIZED_MAX_ATTEMPTS = 192
+JEV_CAP_USD = Decimal("0.20")
+# Every Jev reservation already made (14-16 October, probes included). A new
+# attempt must carry it forward rather than reset the owner's US$1 ceiling.
+PRIOR_JEV_RESERVED_USD = Decimal("0.173408256")
 JEV_MAX_INPUT_TOKENS = 65_536
 JEV_INPUT_USD_PER_MILLION = Decimal("0.042")
 JEV_ATTEMPT_RESERVATION = Decimal(JEV_MAX_INPUT_TOKENS) * JEV_INPUT_USD_PER_MILLION / Decimal(1_000_000)
@@ -49,6 +56,30 @@ MODEL_BODY_OVERRIDE = {"chat_template_kwargs": {"enable_thinking": False}}
 ANALYST_NODES = frozenset({"Market Analyst", "Sentiment Analyst", "News Analyst", "Fundamentals Analyst"})
 REPORT_KEYS = ("market_report", "sentiment_report", "news_report", "fundamentals_report",
                "investment_plan", "trader_investment_plan", "final_trade_decision")
+STARTUP_MODULES = (
+    "pandas", "requests", "curl_cffi.requests", "httpx", "httpx2", "openai", "typesafe_sdk",
+    "langchain_core.prompts", "langchain_openai", "cli.stats_handler",
+    "tradingagents.default_config", "tradingagents.graph.trading_graph",
+    "tradingagents.llm_clients.factory", "tradingagents.llm_clients.openai_client",
+    "tradingagents.llm_clients.telemetry", "tradingagents.agents.context", "tradingagents.agents.jev",
+    "tradingagents.agents.structured", "tradingagents.agents.sentiment_judgments",
+    "tradingagents.agents.debate_judgments", "tradingagents.agents.claim_check",
+    "tradingagents.agents.analysts.sentiment_analyst", "tradingagents.dataflows.router",
+    "tradingagents.dataflows.feed", "tradingagents.dataflows.vendors.yahoo.snapshot",
+    "tradingagents.memory.settlement", "tradingagents.reporting",
+)
+TIMING_PROTOCOL = {
+    "version": 2,
+    "session_startup": "Measured once: dependency import preparation through all registered module imports; before run clocks.",
+    "startup_network": "Refused throughout dependency imports; no model warmup or inference request.",
+    "startup_dependencies": list(STARTUP_MODULES),
+    "research_start": "measurement_started milestone immediately before first graph setup scope",
+    "research_end": "persisted_report milestone after graph report tree is written",
+    "research_includes": "Fresh graph/model clients, graph research, decision persistence, report tree persistence",
+    "end_to_end_start": "measure_run entry after session dependency startup",
+    "end_to_end_end": "trace.finish, before measurement artifact serialization",
+    "first_useful_result": "unobserved: no UI render observation",
+}
 
 
 class SendGuardStopped(RuntimeError):
@@ -104,6 +135,8 @@ def check_destination(request, host, path):
     if (request.method != "POST" or url.scheme != "https" or url.host != host or url.path != path
             or url.port not in (None, 443) or url.query or url.username or url.password):
         raise SendGuardStopped("unexpected benchmark destination refused")
+    if host == "api.typesafe.ai" and request.headers.get("TypeSafe-Danger-Zone-Long-Context", "").strip():
+        raise SendGuardStopped("long-context request exceeds the registered token reservation")
 
 
 def guarded_transport(http_module, budget, host, path, provider, model):
@@ -154,13 +187,16 @@ def guarded_transport(http_module, budget, host, path, provider, model):
     return GuardedTransport()
 
 
-def registered_config(fixture, run_directory):
+def blank_settings():
     from dotenv import dotenv_values, find_dotenv
     names = set(os.environ)
     for filename in (".env", ".env.enterprise"):
         names.update(dotenv_values(find_dotenv(filename, usecwd=True)))
-    blank = {name: "" for name in names if name.startswith("TRADINGAGENTS_")}
-    with patch.dict(os.environ, blank):
+    return {name: "" for name in names if name.startswith("TRADINGAGENTS_")}
+
+
+def registered_config(fixture, run_directory):
+    with patch.dict(os.environ, blank_settings()):
         # Blank settings before the first package import: __init__ loads env
         # files, and malformed/local settings must not affect registration.
         from tradingagents.default_config import _ENV_OVERRIDES, build_default_config
@@ -184,12 +220,45 @@ def registered_config(fixture, run_directory):
     return config
 
 
-def normalized_config(config):
+def session_startup(directory, attempt_id=None):
+    """Load graph dependencies once, with outbound requests refused."""
+    started = time.monotonic()
+    initially_loaded = {name for name in STARTUP_MODULES if name in sys.modules}
+    with patch.dict(os.environ, blank_settings()):
+        from tradingagents.telemetry import RunTrace, use_trace
+        trace = RunTrace(run_id=f"startup-{attempt_id or uuid4().hex[:12]}",
+                         configuration={"measurement_kind": "session_dependency_startup"},
+                         workload={"case": "dependency_startup"})
+        try:
+            with use_trace(trace), trace.scope("startup", "dependency_imports"), offline_network():
+                for name in STARTUP_MODULES:
+                    loaded = name in sys.modules
+                    with trace.scope("startup_import", name, {"operation": "import",
+                                                               "cache_status": "hit" if loaded else "miss"}):
+                        importlib.import_module(name)
+                trace.milestone("dependency_imports_completed")
+        except Exception:
+            trace.finish("failed")
+            trace.persist(directory / "startup_trace.json")
+            raise
+        trace.finish("completed")
+    duration_ms = round((time.monotonic() - started) * 1000, 3)
+    trace.persist(directory / "startup_trace.json")
+    startup = {"run_id": trace.run_id, "status": "completed", "duration_ms": duration_ms,
+               "trace_duration_ms": trace.snapshot()["duration_ms"],
+               "trace_path": "startup_trace.json", "metadata_path": "startup.json",
+               "initially_loaded_modules": sorted(initially_loaded), "dependency_modules": list(STARTUP_MODULES),
+               "warmup_requests": 0, "network_policy": "refused", "protocol": TIMING_PROTOCOL["session_startup"]}
+    write_json(directory / "startup.json", startup)
+    return startup
+
+
+def normalized_config(config, nvidia_timeout_seconds=60):
     result = dict(config)
     for key in ("results_dir", "data_cache_dir", "memory_log_path", "india_db_path", "screener_db_path"):
         result[key] = f"<run_directory>/{key}"
     result["model_extra_body"] = copy.deepcopy(MODEL_BODY_OVERRIDE)
-    result["llm_request_timeout_seconds"] = 60
+    result["llm_request_timeout_seconds"] = nvidia_timeout_seconds
     result["jev_request_timeout_seconds"] = 30
     result["jev_sdk_max_retries"] = 0
     return result
@@ -253,7 +322,8 @@ def synthetic_boundaries(fixture, source):
             context._identity.cache_clear()
 
 
-def graph_measurement(fixture, source, trace, directory, config, nvidia_budget, jev_budget, nvidia_key, jev_key):
+def graph_measurement(fixture, source, trace, directory, config, nvidia_budget, jev_budget, nvidia_key, jev_key,
+                      nvidia_timeout_seconds=60):
     import httpx
     import httpx2
     import typesafe_sdk
@@ -280,14 +350,14 @@ def graph_measurement(fixture, source, trace, directory, config, nvidia_budget, 
         raise SendGuardStopped("unregistered async model send refused")
 
     with ExitStack() as resources:
-        http = resources.enter_context(httpx.Client(timeout=60,
+        http = resources.enter_context(httpx.Client(timeout=nvidia_timeout_seconds,
             transport=guarded_transport(httpx, nvidia_budget, "integrate.api.nvidia.com", "/v1/chat/completions", "nvidia", NVIDIA_MODEL)))
         async_http = httpx.AsyncClient(transport=httpx.MockTransport(refuse_async))
         resources.callback(lambda: asyncio.run(async_http.aclose()))
 
         def tier_client(active_config, tier, **extra):
             client = actual_tier_client(active_config, tier, api_key=nvidia_key,
-                                        timeout=60, http_client=http, http_async_client=async_http, **extra)
+                                        timeout=nvidia_timeout_seconds, http_client=http, http_async_client=async_http, **extra)
             # extra_body is a supported ChatOpenAI field. Setting it on the
             # production model avoids changing general provider passthrough.
             original_get_llm = client.get_llm
@@ -306,6 +376,7 @@ def graph_measurement(fixture, source, trace, directory, config, nvidia_budget, 
         token = cancel_event.set(nvidia_budget.stop_event)
         resources.callback(cancel_event.reset, token)
         with synthetic_boundaries(fixture, source):
+            trace.milestone("measurement_started")
             with trace.scope("setup", "live_graph_initialization"):
                 graph = trading_graph.TradingAgentsGraph(selected_analysts=fixture["workload"]["analysts"],
                                                          config=config, callbacks=[stats])
@@ -331,18 +402,23 @@ def graph_node_paths(snapshot):
             "semantics": "Per-node inclusive spans. Parallel analysts and memory overlap; do not add their durations."}
 
 
-def measure_run(fixture, mode, repetition, directory, cache, nvidia_budget, jev_budget, keys):
+def measure_run(fixture, mode, repetition, directory, cache, nvidia_budget, jev_budget, keys, attempt_id=None,
+                nvidia_timeout_seconds=60):
+    end_to_end_started = time.monotonic()
     from tradingagents.telemetry import RunTrace, use_trace
 
-    run_id = f"live-graph-{mode}-{repetition:02d}"
+    run_id = f"live-{attempt_id or uuid4().hex[:12]}-{mode}-{repetition:02d}"
     run_dir = directory / run_id
     run_dir.mkdir(exist_ok=False)
     config = registered_config(fixture, run_dir)
-    captured = normalized_config(config)
+    captured = normalized_config(config, nvidia_timeout_seconds)
     trace = RunTrace(run_id=run_id, configuration=captured,
                      workload={**fixture["workload"], "case": "graph", "regime": mode, "repetition": repetition,
                                "corpus_sha256": fingerprint(fixture), "configuration_sha256": fingerprint(captured)})
     trace.gap("ui_render_unobserved")
+    trace.gap("final_report_validation_unobserved")
+    trace.gap("first_useful_evidence_not_assessed")
+    trace.gap("generated_brief_not_available")
     source = FixtureSource(fixture, trace, cache)
     before_nvidia, before_jev = nvidia_budget.snapshot(), jev_budget.snapshot()
     output, callback_stats = {}, {}
@@ -355,7 +431,7 @@ def measure_run(fixture, mode, repetition, directory, cache, nvidia_budget, jev_
         else:
             try:
                 output, callback_stats = graph_measurement(fixture, source, trace, run_dir, config,
-                                                          nvidia_budget, jev_budget, *keys)
+                                                          nvidia_budget, jev_budget, *keys, nvidia_timeout_seconds)
             except Exception as exc:
                 status = "failed"
                 output = {"error_type": type(exc).__name__}
@@ -363,6 +439,7 @@ def measure_run(fixture, mode, repetition, directory, cache, nvidia_budget, jev_
                 # credential-bearing URLs or response content.
                 write_json(run_dir / "failure.json", output)
     trace.finish(status)
+    end_to_end_ms = round((time.monotonic() - end_to_end_started) * 1000, 3)
     snapshot = trace.snapshot()
     jev_calls = [span for span in snapshot["spans"] if span["kind"] == "jev"]
     reported = [span["attributes"]["input_tokens"] for span in jev_calls
@@ -370,8 +447,16 @@ def measure_run(fixture, mode, repetition, directory, cache, nvidia_budget, jev_
     estimate = sum(Decimal(str(tokens)) * JEV_INPUT_USD_PER_MILLION / Decimal(1_000_000) for tokens in reported)
     after_nvidia, after_jev = nvidia_budget.snapshot(), jev_budget.snapshot()
     milestones = snapshot["milestones"]
+    measurement_start = milestones.get("measurement_started", {}).get("offset_ms")
+    persisted_report = milestones.get("persisted_report", {}).get("offset_ms")
+    research_ms = round(persisted_report - measurement_start, 3) if (
+        measurement_start is not None and persisted_report is not None) else None
     record = {"run_id": run_id, "mode": mode, "repetition": repetition, "status": status,
               "wall_ms": round((time.monotonic() - started) * 1000, 3),
+              "end_to_end_ms": end_to_end_ms, "research_ms": research_ms,
+              "measurement_start_offset_ms": measurement_start,
+              "persisted_report_offset_ms": persisted_report,
+              "research_endpoint": "persisted_report", "timing_protocol_version": TIMING_PROTOCOL["version"],
               "available_generated_report_ms": milestones.get("generated_report", {}).get("offset_ms"),
               "graph_returned_ms": milestones.get("graph_returned", {}).get("offset_ms"),
               "first_useful_result_ms": None, "render_observation": "unobserved",
@@ -405,75 +490,219 @@ def summarize(samples):
         contributors = sorted(({"node": name, "median_inclusive_ms": statistics.median(values), "n": len(values)}
                                for name, values in nodes.items()), key=lambda row: row["median_inclusive_ms"], reverse=True)
         walls = [sample["wall_ms"] for sample in complete]
+        research = [sample["research_ms"] for sample in complete if sample.get("research_ms") is not None]
+        end_to_end = [sample["end_to_end_ms"] for sample in complete if sample.get("end_to_end_ms") is not None]
         parallel = [sample["node_paths"]["parallel_analyst_max_path_ms"] for sample in complete
                     if sample["node_paths"]["parallel_analyst_max_path_ms"] is not None]
         groups.append({"mode": mode, "registered_n": len(members), "completed_n": len(complete),
                        "statuses": {status: sum(member["status"] == status for member in members)
                                     for status in sorted({member["status"] for member in members})},
                        "median_wall_ms": statistics.median(walls) if walls else None,
+                       "median_research_ms": statistics.median(research) if research else None,
+                       "median_end_to_end_ms": statistics.median(end_to_end) if end_to_end else None,
                        "median_parallel_analyst_max_path_ms": statistics.median(parallel) if parallel else None,
                        "top_three_latency_contributors": contributors[:3],
-                       "tail": "unestimated: registered n=3 per regime"})
+                       "tail": f"unestimated: registered n={len(members)} per regime"})
     return groups
 
 
-def main(argv=None):
+def decimal_amount(value):
+    try:
+        return Decimal(value)
+    except InvalidOperation as exc:
+        raise argparse.ArgumentTypeError("amount must be a decimal number") from exc
+
+
+def load_warm_seed(path, fixture, configuration_sha256):
+    """Read a saved cold fixture cache; refuse it unless every recorded hash matches.
+
+    The seed lets a warm run finish a pair whose cold half completed in an
+    earlier attempt. It is checked before any output directory or send exists.
+    """
+    path = Path(path).resolve()
+    seed = json.loads(path.read_bytes())
+    cold = json.loads(path.with_name("sample.json").read_bytes())
+    entries = seed.get("entries")
+    checks = {
+        "schema_version": seed.get("schema_version") == 1,
+        "cache_sha256": isinstance(entries, dict) and fingerprint(entries) == seed.get("cache_sha256"),
+        "corpus_sha256": seed.get("corpus_sha256") == fingerprint(fixture),
+        "configuration_sha256": seed.get("configuration_sha256") == configuration_sha256
+        and cold.get("configuration_sha256") == configuration_sha256,
+        "cold_sample": cold.get("mode") == "cold_fixture_cache" and cold.get("status") == "completed"
+        and cold.get("fixture_cache_sha256") == seed.get("cache_sha256"),
+        "repetition": cold.get("repetition") in (1, 2, 3),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise ValueError(f"warm seed refused; mismatched: {', '.join(failed)}")
+    try:
+        shown = path.relative_to(ROOT).as_posix()
+    except ValueError:
+        shown = path.name
+    return {"entries": entries, "repetition": cold["repetition"],
+            "metadata": {"path": shown, "file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                         "cache_sha256": seed["cache_sha256"], "configuration_sha256": configuration_sha256,
+                         "cold_session": path.parent.parent.name, "cold_run_id": cold["run_id"],
+                         "repetition": cold["repetition"]}}
+
+
+def argument_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", help="Run the registered paid/trial model calls")
     parser.add_argument("--nvidia-env-file", type=Path, default=ROOT / ".env")
     parser.add_argument("--jev-env-file", type=Path, default=ROOT.parent / "129BOB" / ".env")
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--pairs", type=int, default=3,
+                        help="Number of the three registered matched pairs to run (0 only with --warm-seed)")
+    parser.add_argument("--start-repetition", type=int, default=1, help="First registered pair index (1, 2, or 3)")
+    parser.add_argument("--warm-seed", type=Path,
+                        help="Saved cold fixture_cache.json; runs that pair's warm half first, before any new pairs")
+    parser.add_argument("--max-nvidia-attempts", type=int, default=NVIDIA_MAX_ATTEMPTS,
+                        help="Total sends for this invocation, at most 192")
+    parser.add_argument("--nvidia-timeout-seconds", type=int, choices=(60, 180), default=60,
+                        help="Response timeout; 180 registers a separate recovery configuration")
+    parser.add_argument("--jev-cap-usd", type=decimal_amount, default=JEV_CAP_USD)
+    parser.add_argument("--prior-jev-reserved-usd", type=decimal_amount, default=PRIOR_JEV_RESERVED_USD,
+                        help="Worst-case reservations already consumed from the authorized US$1")
+    return parser
+
+
+def parse_arguments(argv=None):
+    parser = argument_parser()
     args = parser.parse_args(argv)
     if not args.execute:
         parser.error("--execute is required for live calls")
+    if args.pairs == 0 and args.warm_seed is None:
+        parser.error("pairs may be 0 only when --warm-seed supplies the single run")
+    if (not 0 <= args.pairs <= 3 or not 1 <= args.start_repetition <= 3
+            or args.start_repetition + args.pairs - 1 > 3):
+        parser.error("pairs/start-repetition must select a subset of the registered indices 1, 2, 3")
+    if not 1 <= args.max_nvidia_attempts <= NVIDIA_AUTHORIZED_MAX_ATTEMPTS:
+        parser.error("max-nvidia-attempts must be between 1 and 192")
+    if not args.jev_cap_usd.is_finite() or args.jev_cap_usd < JEV_ATTEMPT_RESERVATION:
+        parser.error("jev-cap-usd must be finite and reserve at least one bounded request")
+    if not args.prior_jev_reserved_usd.is_finite() or not Decimal("0") <= args.prior_jev_reserved_usd < Decimal("1"):
+        parser.error("prior-jev-reserved-usd must be finite and between 0 inclusive and 1 exclusive")
+    if args.jev_cap_usd + args.prior_jev_reserved_usd > Decimal("1"):
+        parser.error("new Jev cap plus prior reservations exceeds the authorized US$1")
+    return args
+
+
+def execution_plan(args, seed=None):
+    indices = list(range(args.start_repetition, args.start_repetition + args.pairs))
+    if seed is not None and seed["repetition"] in indices:
+        raise ValueError("the warm seed's pair is also registered as a new pair")
+    seeded = [{"mode": "warm_fixture_cache", "repetition": seed["repetition"], "seeded_from": seed["metadata"]}
+              ] if seed is not None else []
+    return {"registered_pairs": args.pairs, "registered_runs": 2 * args.pairs + len(seeded),
+            "registered_pair_indices": indices,
+            "seeded_warm_repetition": seed["repetition"] if seed is not None else None,
+            "warm_seed": seed["metadata"] if seed is not None else None,
+            "registered_run_order": seeded + [{"mode": mode, "repetition": index} for index in indices
+                                              for mode in ("cold_fixture_cache", "warm_fixture_cache")],
+            "nvidia_max_http_attempts": args.max_nvidia_attempts,
+            "nvidia_request_timeout_seconds": args.nvidia_timeout_seconds, "jev_cap_usd": float(args.jev_cap_usd),
+            "jev_prior_reserved_usd": float(args.prior_jev_reserved_usd),
+            "jev_cumulative_worst_case_usd": float(args.jev_cap_usd + args.prior_jev_reserved_usd),
+            "jev_authorized_total_cap_usd": 1.0, "timing_protocol": copy.deepcopy(TIMING_PROTOCOL),
+            "timing_protocol_sha256": fingerprint(TIMING_PROTOCOL)}
+
+
+def run_pairs(fixture, directory, indices, nvidia_budget, jev_budget, keys, attempt_id, nvidia_timeout_seconds=60,
+              seed=None):
+    samples = []
+    if seed is not None:
+        # Finishes an earlier attempt's pair: same warm regime, cache from that
+        # attempt's saved cold run rather than from a cold run made here.
+        warm, _ = measure_run(fixture, "warm_fixture_cache", seed["repetition"], directory, seed["entries"],
+                              nvidia_budget, jev_budget, keys, attempt_id, nvidia_timeout_seconds)
+        warm.update(input_fixture_cache_path=seed["metadata"]["path"],
+                    input_fixture_cache_sha256=seed["metadata"]["cache_sha256"],
+                    input_fixture_cache_source={key: seed["metadata"][key] for key in ("cold_session", "cold_run_id")})
+        write_json(directory / warm["run_id"] / "sample.json", warm)
+        samples.append(warm)
+        write_json(directory / "samples.json", samples)
+        print(json.dumps({"run_id": warm["run_id"], "status": warm["status"], "wall_ms": warm["wall_ms"],
+                          "nvidia_http_attempts": nvidia_budget.attempts, "jev_reserved_usd": float(jev_budget.reserved_usd)}), flush=True)
+    for repetition in indices:
+        cold, cache = measure_run(fixture, "cold_fixture_cache", repetition, directory, None,
+                                  nvidia_budget, jev_budget, keys, attempt_id, nvidia_timeout_seconds)
+        cache_path = Path(cold["run_id"]) / "fixture_cache.json"
+        cache_hash = fingerprint(cache)
+        write_json(directory / cache_path, {"schema_version": 1, "corpus_sha256": fingerprint(fixture),
+            "configuration_sha256": cold["configuration_sha256"], "cache_sha256": cache_hash,
+            "contains": "frozen synthetic source values only", "entries": cache})
+        cold.update(fixture_cache_path=cache_path.as_posix(), fixture_cache_sha256=cache_hash)
+        write_json(directory / cold["run_id"] / "sample.json", cold)
+        samples.append(cold)
+        write_json(directory / "samples.json", samples)
+        print(json.dumps({"run_id": cold["run_id"], "status": cold["status"], "wall_ms": cold["wall_ms"],
+                          "nvidia_http_attempts": nvidia_budget.attempts, "jev_reserved_usd": float(jev_budget.reserved_usd)}), flush=True)
+        warm, _ = measure_run(fixture, "warm_fixture_cache", repetition, directory, cache,
+                              nvidia_budget, jev_budget, keys, attempt_id, nvidia_timeout_seconds)
+        warm.update(input_fixture_cache_path=cache_path.as_posix(), input_fixture_cache_sha256=cache_hash)
+        write_json(directory / warm["run_id"] / "sample.json", warm)
+        samples.append(warm)
+        print(json.dumps({"run_id": warm["run_id"], "status": warm["status"], "wall_ms": warm["wall_ms"],
+                          "nvidia_http_attempts": nvidia_budget.attempts, "jev_reserved_usd": float(jev_budget.reserved_usd)}), flush=True)
+        write_json(directory / "samples.json", samples)
+    return samples
+
+
+def main(argv=None):
+    args = parse_arguments(argv)
     from dotenv import dotenv_values
     nvidia_key = dotenv_values(args.nvidia_env_file).get("NVIDIA_API_KEY")
     jev_key = dotenv_values(args.jev_env_file).get("TYPESAFE_API_KEY")
     if not nvidia_key or not jev_key:
-        parser.error("Both selected env files must contain their provider key")
+        argument_parser().error("Both selected env files must contain their provider key")
     # SDK debug logs can expose request/response bodies. Raw model reports are
     # stored only in their explicitly named synthetic-output artifacts.
     logging.getLogger().setLevel(logging.CRITICAL)
     for name in ("openai", "httpx", "httpx2", "typesafe_sdk", "tradingagents"):
         logging.getLogger(name).setLevel(logging.CRITICAL)
     fixture = load_fixture()
+    seed = None
+    if args.warm_seed is not None:
+        expected = fingerprint(normalized_config(registered_config(fixture, ROOT / "registration"),
+                                                 args.nvidia_timeout_seconds))
+        try:
+            seed = load_warm_seed(args.warm_seed, fixture, expected)
+            plan = execution_plan(args, seed)
+        except (OSError, ValueError) as exc:
+            argument_parser().error(str(exc))
+    else:
+        plan = execution_plan(args)
     directory = (args.output_dir or ROOT / "results" / "benchmarks" /
                  f"c01-live-graph-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}").resolve()
     directory.mkdir(parents=True, exist_ok=False)
+    attempt_id = uuid4().hex[:12]
     stop = threading.Event()
-    nvidia_budget = SendBudget(stop, NVIDIA_MAX_ATTEMPTS)
-    jev_budget = SendBudget(stop, int(JEV_CAP_USD // JEV_ATTEMPT_RESERVATION), JEV_ATTEMPT_RESERVATION, JEV_CAP_USD)
+    nvidia_budget = SendBudget(stop, args.max_nvidia_attempts)
+    jev_budget = SendBudget(stop, int(args.jev_cap_usd // JEV_ATTEMPT_RESERVATION), JEV_ATTEMPT_RESERVATION, args.jev_cap_usd)
+    write_json(directory / "execution_plan.json", {"attempt_id": attempt_id, **plan})
+    startup = session_startup(directory, attempt_id)
     metadata = provenance()
-    config = normalized_config(registered_config(fixture, directory / "registration"))
+    config = normalized_config(registered_config(fixture, directory / "registration"), args.nvidia_timeout_seconds)
     registration = {"schema_version": 1, "benchmark_id": "C01", "measurement_kind": "live_graph_on_synthetic_sources",
-        "registered_at_utc": datetime.now(UTC).isoformat(), **metadata,
+        "registered_at_utc": datetime.now(UTC).isoformat(), "attempt_id": attempt_id, **metadata,
         "fixture_sha256": hashlib.sha256(FIXTURE.read_bytes()).hexdigest(), "corpus_sha256": fingerprint(fixture),
         "fixture_license": fixture["license"], "workload": fixture["workload"], "configuration": config,
         "configuration_sha256": fingerprint(config), "workload_sha256": fingerprint(fixture["workload"]),
-        "registered_pairs": 3, "registered_runs": 6, "nvidia_max_http_attempts": NVIDIA_MAX_ATTEMPTS,
-        "jev_cap_usd": float(JEV_CAP_USD), "jev_max_input_tokens_per_attempt": JEV_MAX_INPUT_TOKENS,
+        **plan, "session_startup": startup, "jev_max_input_tokens_per_attempt": JEV_MAX_INPUT_TOKENS,
         "jev_input_usd_per_million": float(JEV_INPUT_USD_PER_MILLION),
-        "jev_price_source": "https://docs.typesafe.ai/models", "jev_pricing_checked_date": "2026-10-14",
+        "jev_price_source": "https://docs.typesafe.ai/models", "jev_pricing_checked_date": "2026-10-16",
         "prior_jev_component_probe_max_usd": 0.016515072,
         "source_transformations": {"identity_long_name": "Synthetic C01 Company", "feed_items": [],
                                    "feed_unavailable": False, "ohlcv": "business-day expansion of frozen scalar OHLCV"},
         "cold_warm_scope": "Fixture response cache only; fresh graph, model client connections, and memory each run.",
-        "tail_semantics": "n=3 per regime; no tail performance claim", "first_useful_result_ms": None,
+        "tail_semantics": (f"registered n={args.pairs} cold / {args.pairs + (seed is not None)} warm in this attempt; "
+                           "no tail performance claim"), "first_useful_result_ms": None,
         "render_observation": "unobserved", "failure_policy": "retain failures; cancel all new sends after throttle/auth/quota/transport failure/budget guard"}
     write_json(directory / "registration.json", registration)
-    samples = []
-    for repetition in range(1, 4):
-        cold, cache = measure_run(fixture, "cold_fixture_cache", repetition, directory, None,
-                                  nvidia_budget, jev_budget, (nvidia_key, jev_key))
-        samples.append(cold)
-        print(json.dumps({"run_id": cold["run_id"], "status": cold["status"], "wall_ms": cold["wall_ms"],
-                          "nvidia_http_attempts": nvidia_budget.attempts, "jev_reserved_usd": float(jev_budget.reserved_usd)}), flush=True)
-        warm, _ = measure_run(fixture, "warm_fixture_cache", repetition, directory, cache,
-                              nvidia_budget, jev_budget, (nvidia_key, jev_key))
-        samples.append(warm)
-        print(json.dumps({"run_id": warm["run_id"], "status": warm["status"], "wall_ms": warm["wall_ms"],
-                          "nvidia_http_attempts": nvidia_budget.attempts, "jev_reserved_usd": float(jev_budget.reserved_usd)}), flush=True)
-        write_json(directory / "samples.json", samples)
+    samples = run_pairs(fixture, directory, plan["registered_pair_indices"], nvidia_budget, jev_budget,
+                        (nvidia_key, jev_key), attempt_id, args.nvidia_timeout_seconds, seed)
     summary = {**registration, "samples": samples, "groups": summarize(samples),
                "nvidia_budget": nvidia_budget.snapshot(), "jev_budget": jev_budget.snapshot(),
                "jev_reported_estimated_cost_usd": sum(sample["jev_reported_estimated_cost_usd"] for sample in samples),
@@ -483,9 +712,10 @@ def main(argv=None):
     write_json(directory / "summary.json", summary)
     lines = ["# C01 live graph on frozen synthetic evidence", "", summary["interpretation"], "",
              "UI render / first useful result are unobserved. Source cache regimes are interleaved with fresh memory.", "",
-             "| Regime | Completed / registered | Median wall ms | Maximum analyst path median ms |", "|---|---:|---:|---:|"]
+             f"Session dependency startup: {startup['duration_ms']:.1f} ms; no inference warmup.", "",
+             "| Regime | Completed / registered | Median research ms | Median end-to-end ms | Maximum analyst path median ms |", "|---|---:|---:|---:|---:|"]
     for group in summary["groups"]:
-        lines.append(f"| {group['mode']} | {group['completed_n']} / {group['registered_n']} | {group['median_wall_ms']} | {group['median_parallel_analyst_max_path_ms']} |")
+        lines.append(f"| {group['mode']} | {group['completed_n']} / {group['registered_n']} | {group['median_research_ms']} | {group['median_end_to_end_ms']} | {group['median_parallel_analyst_max_path_ms']} |")
         for row in group["top_three_latency_contributors"]:
             lines.append(f"\n{row['node']}: median inclusive {row['median_inclusive_ms']:.1f} ms across {row['n']} completed runs.")
     (directory / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
