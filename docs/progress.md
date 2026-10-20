@@ -20,6 +20,15 @@ Next task: **finish and verify the accepted C06 Quick/Standard slice**, includin
 
 The initial audience remains an NSE watchlist investor hypothesis, with US-equity validation. The owner authorized limited NVIDIA quota use and Jev up to US$1. Keys were checked without displaying them and both live services responded. No achieved product speedup, customer validation or real-source completion-time claim exists.
 
+## Owner decisions, 20 October 2026
+
+Recorded in chat; nothing started on them yet.
+
+- **C06 (all three [ADR 0004 questions](adr/0004-research-modes-and-quick-path.md#questions-for-the-owner) take the recommended option A).** Quick scope: local point-in-time facts, bounded price/news, one synthesis, code-only ID/figure checks, with qualitative support left unchecked. Quick budget: 60 s active, no generation retry, partial output on a slow source/model. Deep: shown as planned/unavailable, Quick and Standard built first, full C06 acceptance stays open. Next: test-first implementation per ADR 0004 section 6.
+- **C04 review:** Claude Code runs the code review and records its findings; the owner merges.
+- **C02 target cohort:** Indian retail investors, plus small advisers and analysts. This replaces the "NSE watchlist investor" hypothesis.
+- **C02 interviews: skipped for now.** The owner will hold them when possible and report the results. Until then, every user-task claim stays a hypothesis: there is no user evidence.
+
 ## Status definitions
 
 | Status | Meaning |
