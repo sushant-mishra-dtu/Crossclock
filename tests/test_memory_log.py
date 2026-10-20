@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from tests.run_states import complete_state
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.schemas import PortfolioDecision, PortfolioRating
 from tradingagents.graph.propagation import Propagator
@@ -894,44 +895,34 @@ class TestLegacyRemoval:
         """propagate() completes and stores the decision after the redesign."""
         import functools
 
-        fake_state = {
-            "final_trade_decision": "Rating: Buy\nBuy NVDA.",
-            "final_rating": "Buy",
-            "company_of_interest": "NVDA",
-            "trade_date": "2026-01-10",
-            "market_report": "",
-            "sentiment_report": "",
-            "news_report": "",
-            "fundamentals_report": "",
-            "investment_debate_state": {
-                "bull_history": "", "bear_history": "", "history": "",
-                "current_response": "",
-            },
-            "investment_plan": "",
-            "trader_investment_plan": "",
-            "risk_debate_state": {
-                "aggressive_history": "", "conservative_history": "",
-                "neutral_history": "", "history": "",
-                "current_aggressive_response": "", "current_conservative_response": "",
-                "current_neutral_response": "", "count": 1, "latest_speaker": "",
-            },
-        }
+        fake_state = complete_state(
+            final_trade_decision="Rating: Buy\nBuy NVDA.",
+            final_rating="Buy",
+            company_of_interest="NVDA",
+            trade_date="2026-01-10",
+        )
         mock_graph = MagicMock()
         mock_graph.memory_log = TradingMemoryLog({"memory_log_path": str(tmp_path / "mem.md")})
         mock_graph.debug = False
         mock_graph.config = {"results_dir": str(tmp_path)}
+        mock_graph.selected_analysts = ("market",)
         mock_graph.graph.invoke.return_value = fake_state
         mock_graph.propagator.create_initial_state.return_value = fake_state
         mock_graph.propagator.get_graph_args.return_value = {}
-        # Bind the real _run_graph so propagate's call to self._run_graph executes
-        # the actual write path instead of the auto-MagicMock.
+        # Run the real completion gate and decision write path; auto-MagicMocks
+        # would not classify this as a completed run.
         mock_graph._run_graph = functools.partial(
             TradingAgentsGraph._run_graph, mock_graph
+        )
+        mock_graph.completion = functools.partial(
+            TradingAgentsGraph.completion, mock_graph
         )
         mock_graph.record_decision = functools.partial(
             TradingAgentsGraph.record_decision, mock_graph
         )
-        TradingAgentsGraph.propagate(mock_graph, "NVDA", "2026-01-10")
+        final_state, signal = TradingAgentsGraph.propagate(mock_graph, "NVDA", "2026-01-10")
+        assert final_state is fake_state
+        assert signal == "Buy"
         entries = mock_graph.memory_log.load_entries()
         assert len(entries) == 1
         assert entries[0]["ticker"] == "NVDA"
