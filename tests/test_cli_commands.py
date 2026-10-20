@@ -39,7 +39,7 @@ def test_options_still_parse_without_a_subcommand(runner):
 def test_backtest_does_not_also_run_an_analysis(runner, monkeypatch, tmp_path):
     swept = []
     monkeypatch.setattr(m, "run_backtest", lambda *a, **kw: swept.append((a, kw)) or _Result(tmp_path))
-    monkeypatch.setattr(m, "summarize", lambda log: _Summary())
+    monkeypatch.setattr(m, "summarize", lambda log, **kw: _Summary())
 
     result = runner.invoke(m.app, ["backtest", "NVDA,AAPL", "--start", "2026-06-01",
                                    "--end", "2026-06-15", "--every", "7"])
@@ -101,7 +101,7 @@ def test_backtest_can_continue_an_interrupted_sweep(runner, monkeypatch, tmp_pat
     """Resuming is what makes a long sweep practical, and the Python API has it."""
     swept = []
     monkeypatch.setattr(m, "run_backtest", lambda *a, **kw: swept.append(kw) or _Result(tmp_path))
-    monkeypatch.setattr(m, "summarize", lambda log: _Summary())
+    monkeypatch.setattr(m, "summarize", lambda log, **kw: _Summary())
 
     result = runner.invoke(m.app, ["backtest", "NVDA", "--start", "2026-06-01",
                                    "--end", "2026-06-08", "--run-id", "20260617_120000"])
@@ -145,7 +145,7 @@ def test_backtest_shows_each_cell_and_how_to_continue(runner, monkeypatch, tmp_p
         return _Result(tmp_path)
 
     monkeypatch.setattr(m, "run_backtest", sweep)
-    monkeypatch.setattr(m, "summarize", lambda log: _Summary())
+    monkeypatch.setattr(m, "summarize", lambda log, **kw: _Summary())
 
     result = runner.invoke(m.app, ["backtest", "NVDA", "--start", "2026-06-01", "--end", "2026-06-08"])
 
@@ -161,7 +161,7 @@ def test_backtest_shows_each_cell_and_how_to_continue(runner, monkeypatch, tmp_p
 def test_backtest_takes_its_analysts_as_an_analysis_does(runner, monkeypatch, tmp_path, args, analysts):
     swept = []
     monkeypatch.setattr(m, "run_backtest", lambda *a, **kw: swept.append(kw) or _Result(tmp_path))
-    monkeypatch.setattr(m, "summarize", lambda log: _Summary())
+    monkeypatch.setattr(m, "summarize", lambda log, **kw: _Summary())
 
     result = runner.invoke(m.app, ["backtest", "NVDA", "--start", "2026-06-01", "--end", "2026-06-01", *args])
 
