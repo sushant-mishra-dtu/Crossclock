@@ -79,7 +79,8 @@ def _json(path: Path):
 
 
 def _report_file(folder: Path, kind: str) -> Path:
-    return folder / ("partial_report.md" if kind == "partial" else "complete_report.md")
+    return folder / ("quick_brief.md" if kind == "quick" else
+                     "partial_report.md" if kind == "partial" else "complete_report.md")
 
 
 # --- Header, run, rating and summary ------------------------------------------
@@ -310,6 +311,39 @@ def report_brief(folder, kind: str, *, results_root=None) -> dict:
     entries, texts = _entries(manifest, _store(folder, manifest, results_root))
     completion = _json(folder / "run_status.json")
     completion = completion if isinstance(completion, dict) else None
+    if kind == "quick":
+        data = _json(folder / "quick_data.json") or {}
+        state = data.get("state") or {}
+        settings = data.get("settings") or {}
+        from tradingagents.quick import validate_summary
+
+        summary = state.get("quick_summary") or {}
+        checks = validate_summary(summary, {e["id"]: texts[e["content_sha256"]]
+                                           for e in entries if e.get("content_sha256") in texts
+                                           and e.get("coverage") == AVAILABLE})
+        valid_ids = {e["id"] for e in entries}
+        observations = []
+        # Persisted text is shown only after the coordinator accepted its schema.
+        if checks.get("valid") is True and summary:
+            for item in checks.get("observations") or ():
+                ids = item.get("evidence_ids") or []
+                observations.append({**item, "evidence_ids": [i for i in ids if i in valid_ids],
+                                     "figures": _trace(item.get("text", ""),
+                                                       [e for e in entries if e["id"] in ids], texts, {})})
+        return {
+            "mode": "quick", "settings": settings, "recorded": recorded,
+            "header": _header(report_text, manifest.get("instrument") or {}),
+            "run": {**_run(completion), "summary": (completion or {}).get("detail"),
+                    "gaps": list(state.get("quick_gaps") or [])},
+            "rating": {"final": None, "portfolioManager": None, "partial": not is_complete(completion or {})},
+            "quick": {"observations": observations, "questions": (summary.get("questions") or []) if checks.get("valid") else [],
+                      "gaps": state.get("quick_gaps") or [], "qualitativeSupport": "not_checked",
+                      "validationReason": checks.get("reason"),
+                      "facts": [{"id": e["id"], "tool": e.get("tool"), "coverage": e.get("coverage"),
+                                 "text": texts.get(e.get("content_sha256"))} for e in entries]},
+            "headlines": _headlines(entries, None), "coverage": _coverage(entries),
+            "missing": _missing(entries, completion), "entries": entries,
+        }
     decision = _decision(folder, report_text)
     check = _json(folder / "claim_check.json")
     return {

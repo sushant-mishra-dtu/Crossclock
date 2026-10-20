@@ -176,11 +176,27 @@ def select_analysts(asset_type: AssetType = AssetType.STOCK, default=None) -> li
     return choices
 
 
+def select_research_mode(default=None) -> str:
+    """Product mode, distinct from model roles and Standard discussion depth."""
+    choice = questionary.select(
+        "Select Your [Research Mode]:",
+        choices=[
+            questionary.Choice("Standard - Specialists and an investment decision", value="standard"),
+            questionary.Choice("Quick - Sourced brief, 60 seconds, no investment decision", value="quick"),
+            questionary.Choice("Deep - Planned", value="deep", disabled="Targeted retrieval is not available yet"),
+        ],
+        default=default if default in ("standard", "quick") else "standard",
+    ).ask()
+    if choice is None:
+        raise typer.Exit(code=1)
+    return choice
+
+
 def select_research_depth(default=None) -> int:
     """Select research depth using an interactive selection."""
 
     DEPTH_OPTIONS = [
-        ("Shallow - Quick research, few debate and strategy discussion rounds", 1),
+        ("Shallow - Full Standard decision with fewer discussion rounds", 1),
         ("Medium - Middle ground, moderate debate rounds and strategy discussion", 3),
         ("Deep - Comprehensive research, in depth debate and strategy discussion", 5),
     ]

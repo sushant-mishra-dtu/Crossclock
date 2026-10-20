@@ -53,6 +53,9 @@ def analyze(
     ),
     ticker: str = typer.Option(None, "--ticker", help="Ticker to analyze, e.g. NVDA or 0700.HK; skips the prompt"),
     date: str = typer.Option(None, "--date", help="Analysis date, YYYY-MM-DD; skips the prompt"),
+    mode: str = typer.Option(
+        None, "--mode", help="Research mode: standard or quick; Deep is planned and unavailable"
+    ),
     analysts: str = typer.Option(
         None, "--analysts", help="Comma-separated analysts, e.g. market,news; skips the prompt"
     ),
@@ -88,6 +91,8 @@ def analyze(
 
     try:
         flags = {"ticker": ticker, "date": date, "analysts": analysts, "save": save, "show": show, "html": html}
+        if mode is not None:
+            flags["mode"] = mode
         run_analysis(checkpoint=checkpoint, portfolio=portfolio_context, flags=flags)
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.
@@ -145,7 +150,7 @@ def backtest(
               "selected_analysts": [a.value for a in chosen]}
 
     try:
-        result = run_backtest(names, dates, DEFAULT_CONFIG, **kwargs)
+        result = run_backtest(names, dates, {**DEFAULT_CONFIG, "research_mode": "standard"}, **kwargs)
     except Exception as exc:  # a missing key or an unknown analyst is a setup error
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from None

@@ -119,12 +119,14 @@ def parse_rating(text: str, default: str = RATING_REVIEW) -> str:
     return rating if rating is not None else default
 
 
-def run_rating(final_state: dict) -> str:
+def run_rating(final_state: dict) -> str | None:
     """A finished run's rating: the Portfolio Manager's own, else read from its decision.
 
     The fallback serves a state without ``final_rating``, such as a run an older
     version completed and a checkpoint hands back unchanged.
     """
+    if final_state.get("research_mode") == "quick" or final_state.get("decision_eligible") is False:
+        return None
     return final_state.get("final_rating") or parse_rating(final_state.get("final_trade_decision", ""))
 
 

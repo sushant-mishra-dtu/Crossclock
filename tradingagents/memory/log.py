@@ -18,7 +18,10 @@ class TradingMemoryLog:
     _REFLECTION_RE = re.compile(r"REFLECTION:\n(.*?)$", re.DOTALL)
 
     def __init__(self, config: dict = None):
+        from tradingagents.modes import require_standard
+
         cfg = config or {}
+        require_standard(cfg)
         self._log_path = None
         path = cfg.get("memory_log_path")
         if path:

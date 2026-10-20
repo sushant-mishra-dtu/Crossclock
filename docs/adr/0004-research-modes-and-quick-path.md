@@ -1,10 +1,13 @@
 # ADR 0004: Research modes and first Quick path (C06)
 
-Status: **Proposed**, 20 October 2026 (Asia/Calcutta). C06 in the
+Status: **Accepted for the first slice**, 20 October 2026 (Asia/Calcutta). C06 in the
 [plan](../plan.md#research-modes) and [tracker](../progress.md). Evidence:
 source reviewed on C05 merge `cc97989` (C05 implementation `96926c9`);
-no implementation, provider calls, speed measurements or user observations.
-The tracker requests an owner design before implementation, as for C03/C05.
+The owner accepted all three recommended choices on 20 October 2026: local
+point-in-time facts and bounded recent prices/news plus one synthesis; a 60 s
+active budget excluding queue time, no generation retry and partial retention;
+Standard preserved and Deep planned/unavailable until targeted retrieval exists.
+Implementation is in progress. No live calls, speed claims or spend authorized.
 
 ## Context
 
@@ -124,14 +127,14 @@ withheld or visibly unavailable, not described as current verified facts.
 
 ### 3. Budget and cancellation
 
-Recommended initial active budget: **60 seconds**, with at most 15 seconds for
+Accepted initial active budget: **60 seconds**, with at most 15 seconds for
 initialization/identity/local reads/acquisition, at most 40 seconds for the one
 generation attempt and 5 seconds reserved for checks/persistence. Set the work
 cutoff to the run deadline minus that reserve. Acquisition ends at the earlier
 of start + 15 s and the work cutoff; generation's timeout is the smaller of
 40 s and time left to the work cutoff. Do not start it if that time is
 nonpositive. Queue wait is recorded separately, as in C03.
-These are proposed stop budgets, **not measured ETAs or a completion promise**.
+These are stop budgets, **not measured ETAs or a completion promise**.
 The plan's 5/10-second facts and 30/60-second brief objectives remain unproven.
 
 Identity lookup, source transports and model initialization must be included
@@ -234,7 +237,7 @@ reuse remains separately designed work.
 
 ### 6. Implementation sequence and acceptance
 
-After the owner chooses scope and budget, implement test-first:
+With scope and budget accepted, implement test-first:
 
 1. Mode policy/config validation, backward-compatible precedence, immutable
    queued config and backtest rejection. Existing Standard execution/prompt,
@@ -274,20 +277,23 @@ source/check coverage, failures/partials and actual usage. Use at least three
 matched repetitions for diagnosis; do not qualify a p95 with fewer than 100
 comparable runs. No speed, cost or supported-claim improvement is claimed here.
 
-## Questions for the owner
+## Owner decisions (accepted 20 October 2026)
 
-1. **First Quick scope/checks.** (A, recommended) Local point-in-time facts,
+All three **A (recommended)** choices below are accepted. Alternatives are
+retained as design history; they are not pending questions.
+
+1. **First Quick scope/checks.** (A, accepted) Local point-in-time facts,
    bounded price/news, one synthesis and code-only ID/figure checks, as above;
    qualitative support remains unchecked. (B) Source/fact packet only, with no
    generated synthesis. If B is selected, use a distinct source-only policy
    with zero model sends; sourced facts and deterministic checks are its
    required outputs, so absent synthesis does not make it partial. Adding
    source-entailment calls needs a separate policy and quality evaluation.
-2. **Quick budget.** (A, recommended) 60 s active budget, no generation retry;
+2. **Quick budget.** (A, accepted) 60 s active budget, no generation retry;
    partial output on a slow source/model. (B) 180 s active budget with a 120 s
    generation-attempt cap, still one attempt; initial 60 s completion objective
    is then explicitly deferred. Both retain separate queue-time measurement.
-3. **Deep scope.** (A, recommended) Display Deep as planned/unavailable, build
+3. **Deep scope.** (A, accepted) Display Deep as planned/unavailable, build
    Quick/Standard first and keep full C06 acceptance open. (B) Expand C06 now
    to design and implement targeted retrieval plus an explicit Deep budget;
    do not substitute the existing five-round setting for that work.

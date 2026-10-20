@@ -14,6 +14,11 @@ import pytest
 import cli.selections as cli_selections
 
 
+@pytest.fixture(autouse=True)
+def _standard_mode(monkeypatch):
+    monkeypatch.setattr(cli_selections, "select_research_mode", lambda default=None: "standard")
+
+
 @pytest.mark.unit
 class TestProviderDefaultUrl(unittest.TestCase):
     def test_known_providers_resolve(self):

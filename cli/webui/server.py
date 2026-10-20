@@ -56,6 +56,7 @@ from tradingagents.dataflows.errors import NoMarketDataError, VendorError, Vendo
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV, get_api_key_env
 from tradingagents.llm_clients.model_catalog import get_model_options
+from tradingagents.modes import mode_config, mode_view, research_mode
 from tradingagents.portfolio import PortfolioContext
 
 STATIC = Path(__file__).parent / "static"
@@ -134,9 +135,22 @@ def options() -> dict:
                       "deep_think_llm": DEFAULT_CONFIG["deep_think_llm"]}
     return {
         "providers": providers,
+        "modes": [{"key": "quick", "label": "Quick", "available": True},
+                  {"key": "standard", "label": "Standard", "available": True},
+                  {"key": "deep", "label": "Deep (planned)", "available": False}],
+        "modeFromEnv": bool(os.environ.get("TRADINGAGENTS_RESEARCH_MODE")),
+        "quickProviderOverride": DEFAULT_CONFIG.get("quick_think_provider"),
+        "modePolicies": {mode: mode_view({**DEFAULT_CONFIG, "research_mode": mode})
+                         for mode in ("quick", "standard")},
+        "roundOverrides": {key: DEFAULT_CONFIG[key] if os.environ.get(env) else None
+                           for key, env in (("max_debate_rounds", "TRADINGAGENTS_MAX_DEBATE_ROUNDS"),
+                                            ("max_risk_discuss_rounds", "TRADINGAGENTS_MAX_RISK_ROUNDS"))},
         "depths": DEPTHS,
         "languages": LANGUAGES,
         "defaults": {
+            "mode": (os.environ.get("TRADINGAGENTS_RESEARCH_MODE") or prefs.get("research_mode") or "standard")
+                    if (os.environ.get("TRADINGAGENTS_RESEARCH_MODE") or prefs.get("research_mode") or "standard")
+                    in ("quick", "standard") else "standard",
             "provider": provider,
             "quick": remembered.get("quick_think_llm") or "",
             "deep": remembered.get("deep_think_llm") or "",
@@ -164,15 +178,22 @@ def set_api_key(body: dict) -> dict:
 
 def _selections(settings: dict) -> dict:
     """CLI-shaped selections from the settings panel, validated like the CLI's."""
+    try:
+        mode = research_mode({"research_mode": settings.get("mode", "standard")})
+    except ValueError as exc:
+        raise ApiError(str(exc)) from None
     provider = str(settings.get("provider") or "").lower()
     known = {p["key"]: p for p in options()["providers"]}
     if provider not in known:
         raise ApiError("Choose an LLM provider.")
-    if not known[provider]["apiKey"]["set"]:
-        raise ApiError(f"Set {known[provider]['apiKey']['env']} in the settings panel first.")
+    effective_provider = (DEFAULT_CONFIG.get("quick_think_provider") or provider) if mode == "quick" else provider
+    key = _key_status(effective_provider)
+    if not key["set"]:
+        raise ApiError(f"Set {key['env']} in the settings panel first.")
     quick, deep = (str(settings.get(k) or "").strip() for k in ("quick", "deep"))
-    if not quick or not deep:
-        raise ApiError("Choose both models in the settings panel first.")
+    if not quick or (mode == "standard" and not deep):
+        raise ApiError("Choose the quick-thinking model first." if mode == "quick"
+                       else "Choose both models in the settings panel first.")
     depth = settings.get("depth") if settings.get("depth") in DEPTHS else "Shallow"
     effort = {}
     if provider in EFFORTS:
@@ -181,7 +202,7 @@ def _selections(settings: dict) -> dict:
         effort[key] = value if value in choices and value != "default" else None
     backend_url = str(settings.get("backendUrl") or "").strip() or known[provider]["url"]
     return {
-        "llm_provider": provider, "backend_url": backend_url or None,
+        "research_mode": mode, "llm_provider": provider, "backend_url": backend_url or None,
         "quick_think_llm": quick, "deep_think_llm": deep,
         "research_depth": DEPTHS[depth],
         "output_language": str(settings.get("language") or "").strip() or "English",
@@ -212,6 +233,11 @@ def _analysts(value, crypto: bool) -> list[str]:
 
 def _analysis_jobs(body: dict, tickers: list[str]) -> list[AnalysisJob]:
     """One validated AnalysisJob per ticker, all on the body's date and settings."""
+    settings = body.get("settings") or {}
+    selections = _selections(settings)
+    quick = selections["research_mode"] == "quick"
+    if quick and (body.get("resume") or settings.get("resume")):
+        raise ApiError("Quick does not support checkpoint resume; start a new run.")
     for ticker in tickers:
         if not is_valid_ticker_input(ticker):
             raise ApiError("Tickers use letters, digits and . _ - ^ = only.")
@@ -222,10 +248,10 @@ def _analysis_jobs(body: dict, tickers: list[str]) -> list[AnalysisJob]:
     for raw in tickers:
         ticker = normalize_ticker_symbol(raw or "SPY")
         asset_type = detect_asset_type(ticker)
-        picks.append((ticker, asset_type, _analysts(body.get("analysts"), asset_type == AssetType.CRYPTO)))
-    selections = _selections(body.get("settings") or {})
-    portfolio = _portfolio(body.get("portfolio"))
-    config = _build_run_config(selections, bool((body.get("settings") or {}).get("checkpoint")))
+        picks.append((ticker, asset_type, [] if quick else
+                      _analysts(body.get("analysts"), asset_type == AssetType.CRYPTO)))
+    portfolio = None if quick else _portfolio(body.get("portfolio"))
+    config = mode_config(_build_run_config(selections, False if quick else bool(settings.get("checkpoint"))))
     save_last_run({**selections, "analysts": picks[0][2]})
     return [AnalysisJob(ticker, trade_date.isoformat(), asset_type.value, analysts, config, portfolio)
             for ticker, asset_type, analysts in picks]
@@ -262,7 +288,7 @@ def _date(value, label: str) -> date:
 
 def analysis_list(registry: JobRegistry) -> list[dict]:
     return [{"id": j.id, "ticker": j.ticker, "date": j.trade_date, "status": j.status,
-             "rating": j.rating} for j in registry.of_type(AnalysisJob)]
+             "rating": j.rating, "mode": j.config["research_mode"]} for j in registry.of_type(AnalysisJob)]
 
 
 def analysis_detail(job: AnalysisJob) -> dict:
@@ -276,15 +302,18 @@ def analysis_detail(job: AnalysisJob) -> dict:
     report_path = snap["report_path"]
     return {
         "id": job.id, "ticker": job.ticker, "date": job.trade_date, "analysts": job.analysts,
-        "status": snap["status"], "rating": snap["rating"],
+        "status": snap["status"], "rating": snap["rating"], "mode": snap["mode"],
         "error": snap["error"], "elapsed": snap["elapsed"], "stats": snap["stats"],
         "agents": snap["agent_status"],
-        "teams": [[team, [a for a in agents if a in snap["agent_status"]]]
-                  for team, agents in TEAMS.items()],
+        "teams": ([["Quick research", list(snap["agent_status"])]] if job.config["research_mode"] == "quick"
+                  else [[team, [a for a in agents if a in snap["agent_status"]]]
+                        for team, agents in TEAMS.items()]),
         "sections": [{"key": k, "title": SECTION_TITLES.get(k, k), "body": v}
                      for k, v in snap["sections"].items()],
         "activity": activity[:200],
         "reportDir": str(Path(report_path).parent) if report_path else None,
+        "reportId": Path(report_path).relative_to(Path(job.config["results_dir"])).as_posix()
+                    if report_path else None,
         "partialReportDir": str(Path(snap["partial_report_path"]).parent) if snap["partial_report_path"] else None,
         "completion": _completion_view(snap["completion"]),
         "run": _run_view(snap["control"]),
@@ -307,8 +336,8 @@ def _completion_view(completion: dict | None) -> dict | None:
     return {
         "state": completion["state"],
         "stopReason": completion["stop_reason"],
-        "summary": None if complete else describe_stop(completion),
-        "gaps": describe_gaps(completion),
+        "summary": None if complete else completion.get("detail") or describe_stop(completion),
+        "gaps": list(completion.get("gaps") or []) if completion.get("mode") == "quick" else describe_gaps(completion),
         "missing": completion.get("missing") or [],
         "stages": completion.get("stages") or {},
         "checks": completion.get("checks") or {},
@@ -776,18 +805,33 @@ def reports_list() -> list[dict]:
     for r in list_saved_reports(DEFAULT_CONFIG["results_dir"]):
         try:
             # A partial report has no rating: it is not a decision.
-            rating = None if r.kind == "partial" else report_rating(load_report_sections(r))
+            rating = None if r.kind in ("partial", "quick") else report_rating(load_report_sections(r))
         except (OSError, ValueError):
             rating = None
         out.append({"id": _report_id(r), "ticker": r.ticker, "date": r.trade_date,
                     "modified": r.modified.strftime("%Y-%m-%d %H:%M"), "kind": r.kind,
-                    "rating": rating, "hasJudgments": r.judgments_path is not None})
+                    "rating": rating, "mode": _saved_mode(r), "hasJudgments": r.judgments_path is not None})
     return out
+
+
+def _saved_mode(report) -> dict | None:
+    """Recorded policy only; legacy reports do not acquire an invented mode."""
+    name = "quick_data.json" if report.kind == "quick" else "run_metadata.json"
+    try:
+        data = json.loads((report.path.parent / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    settings = data.get("settings") if report.kind == "quick" else data
+    if report.kind != "quick" and settings.get("research_mode") == "standard":
+        settings = {**settings, "mode": "standard"}
+    return settings if isinstance(settings, dict) else None
 
 
 def _saved_completion(report) -> dict | None:
     """The run-status record saved beside a report tree (docs/adr/0001), worded for the page."""
-    if report.kind not in ("report", "partial"):
+    if report.kind not in ("report", "partial", "quick"):
         return None
     try:
         completion = json.loads((report.path.parent / "run_status.json").read_text(encoding="utf-8"))
@@ -801,11 +845,12 @@ def report_detail(report_id: str) -> dict:
     sections = load_report_sections(report)
     return {"id": report_id, "ticker": report.ticker, "date": report.trade_date,
             "modified": report.modified.strftime("%Y-%m-%d %H:%M"), "kind": report.kind,
-            "path": str(report.path), "rating": None if report.kind == "partial" else report_rating(sections),
+            "path": str(report.path), "rating": None if report.kind in ("partial", "quick") else report_rating(sections),
+            "mode": _saved_mode(report),
             "sections": [{"title": t, "body": b} for t, b in sections],
             "hasJudgments": report.judgments_path is not None,
             # A state log has no saved run status, sources or claim check, so no brief.
-            "hasBrief": report.kind in ("report", "partial"),
+            "hasBrief": report.kind in ("report", "partial", "quick"),
             "completion": _saved_completion(report)}
 
 
@@ -814,7 +859,7 @@ def report_brief(report_id: str) -> dict:
     from tradingagents.brief import report_brief as build
 
     report = _find_report(report_id)
-    if report.kind not in ("report", "partial"):
+    if report.kind not in ("report", "partial", "quick"):
         raise ApiError("A state log has no brief; open its sections instead.", HTTPStatus.NOT_FOUND)
     return build(report.path.parent, report.kind, results_root=DEFAULT_CONFIG["results_dir"])
 
@@ -825,7 +870,7 @@ def report_source(report_id: str, digest: str) -> dict:
 
     report = _find_report(report_id)
     text = None
-    if report.kind in ("report", "partial"):
+    if report.kind in ("report", "partial", "quick"):
         text = source_text(report.path.parent, digest, results_root=DEFAULT_CONFIG["results_dir"])
     if text is None:
         raise ApiError("This source text is not available: the report does not list it, "
@@ -849,6 +894,12 @@ def decisions(run: str | None) -> list[dict]:
 # --- Backtests ----------------------------------------------------------------
 
 def start_backtest(registry: JobRegistry, body: dict) -> dict:
+    try:
+        mode = research_mode({"research_mode": (body.get("settings") or {}).get("mode", "standard")})
+    except ValueError as exc:
+        raise ApiError(str(exc)) from None
+    if mode != "standard":
+        raise ApiError("Backtests require Standard mode; Quick produces no investment decision.")
     names = [normalize_ticker_symbol(t.strip())
              for t in str(body.get("tickers") or "").split(",") if t.strip()]
     if not names or not all(is_valid_ticker_input(t) for t in names):

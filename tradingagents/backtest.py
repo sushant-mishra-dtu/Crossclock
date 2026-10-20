@@ -151,6 +151,9 @@ def run_backtest(
     is checked before each cell; once it returns true no further cell starts and
     nothing is settled, so a stopped sweep resumes like an interrupted one.
     """
+    from tradingagents.modes import require_standard
+
+    require_standard(config)
     # run_id becomes a path segment, so it is validated like a ticker: an
     # absolute or dotted value would otherwise place the run outside results_dir.
     run_id = safe_ticker_component(run_id or datetime.now().strftime("%Y%m%d_%H%M%S"))

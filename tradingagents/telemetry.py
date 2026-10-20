@@ -267,6 +267,13 @@ class RunTrace:
                 "reported_cached_input_tokens": sum(s["attributes"].get("cached_input_tokens") or 0 for s in llms),
                 "llm_usage_missing_calls": sum(s["attributes"].get("usage_status") != "reported" for s in llms),
             }
+            if "quick_worker_transport_usage_not_observed" in self._gaps:
+                # Spawned workers have no callback/transport observation in this process.
+                for key in ("logical_llm_invocations", "llm_generation_attempts",
+                            "observed_http_attempts", "refused_http_sends", "reported_input_tokens",
+                            "reported_generation_tokens", "reported_cached_input_tokens",
+                            "llm_usage_missing_calls"):
+                    metrics[key] = None
             return copy.deepcopy({
                 "schema_version": 1, "run_id": self.run_id, "root_span_id": self.root_span_id,
                 "configuration": self.configuration, "workload": self.workload,

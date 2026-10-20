@@ -2,6 +2,7 @@
 
 import datetime
 import os
+import sys
 from pathlib import Path
 
 import typer
@@ -34,9 +35,11 @@ from cli.prompts import (
     select_deep_thinking_agent,
     select_llm_provider,
     select_research_depth,
+    select_research_mode,
     select_shallow_thinking_agent,
 )
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.modes import research_mode
 
 
 def get_user_selections(flags=None):
@@ -52,23 +55,36 @@ def depth_from_env() -> bool:
                 and os.environ.get("TRADINGAGENTS_MAX_RISK_ROUNDS"))
 
 
+def resolve_mode(flags, prefs=None) -> str:
+    """Explicit flag, environment, valid remembered mode, then Standard."""
+    remembered = (prefs or {}).get("research_mode")
+    fallback = remembered if remembered in ("standard", "quick") else "standard"
+    value = (flags["mode"] if flags.get("mode") is not None else
+             os.environ.get("TRADINGAGENTS_RESEARCH_MODE") or fallback)
+    return research_mode({"research_mode": value})
+
+
 def unattended_gaps(flags) -> list[str]:
     """The flags and environment variables a run with no terminal still needs."""
     env = os.environ.get
-    gaps = [f"--{name}" for name in ("ticker", "date", "analysts") if flags.get(name) is None]
+    mode = resolve_mode(flags, load_last_run())
+    fields = ("ticker", "date") if mode == "quick" else ("ticker", "date", "analysts")
+    gaps = [f"--{name}" for name in fields if flags.get(name) is None]
     gaps += [f"--{name} or --no-{name}" for name in ("save", "show") if flags.get(name) is None]
     if not env("TRADINGAGENTS_OUTPUT_LANGUAGE"):
         gaps.append("TRADINGAGENTS_OUTPUT_LANGUAGE")
-    if not depth_from_env():
+    if mode == "standard" and not depth_from_env():
         gaps.append("TRADINGAGENTS_MAX_DEBATE_ROUNDS and TRADINGAGENTS_MAX_RISK_ROUNDS")
     if not env("TRADINGAGENTS_LLM_PROVIDER"):
         gaps.append("TRADINGAGENTS_LLM_PROVIDER")
-    if not (env("TRADINGAGENTS_QUICK_THINK_LLM") or env("TRADINGAGENTS_DEEP_THINK_LLM")):
+    if mode == "quick" and not env("TRADINGAGENTS_QUICK_THINK_LLM"):
+        gaps.append("TRADINGAGENTS_QUICK_THINK_LLM")
+    elif mode == "standard" and not (env("TRADINGAGENTS_QUICK_THINK_LLM") or env("TRADINGAGENTS_DEEP_THINK_LLM")):
         gaps.append("TRADINGAGENTS_QUICK_THINK_LLM or TRADINGAGENTS_DEEP_THINK_LLM")
     return gaps
 
 
-def _check_tier_providers(main_provider: str) -> None:
+def _check_tier_providers(main_provider: str, mode="standard") -> None:
     """Check each provider the model tiers use (#1440) before the run.
 
     A tier on another provider needs its model from its variable, since the
@@ -78,7 +94,7 @@ def _check_tier_providers(main_provider: str) -> None:
     paid for; a provider no tier uses needs no key.
     """
     used = []
-    for tier in ("quick", "deep"):
+    for tier in (("quick",) if mode == "quick" else ("quick", "deep")):
         provider = (DEFAULT_CONFIG.get(f"{tier}_think_provider") or main_provider).lower()
         if provider != main_provider.lower():
             variable = f"TRADINGAGENTS_{tier.upper()}_THINK_LLM"
@@ -102,13 +118,24 @@ def _from_flag(parse, value, *args):
 
 def _prompt_selections(prefs, flags):
     """Walk the selection steps. ``prefs`` prefills; flags and the environment skip."""
+    try:
+        selected_mode = resolve_mode(flags, prefs)
+    except ValueError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(code=1) from None
+    if flags.get("mode") is None and not os.environ.get("TRADINGAGENTS_RESEARCH_MODE") and sys.stdin and sys.stdin.isatty():
+        selected_mode = select_research_mode(selected_mode)
+    selected_mode = _from_flag(research_mode, {"research_mode": selected_mode})
+
     with open(Path(__file__).parent / "static" / "welcome.txt", encoding="utf-8") as f:
         welcome_ascii = f.read()
 
     welcome_content = f"{welcome_ascii}\n"
     welcome_content += "[bold green]TradingAgents: Multi-Agents LLM Financial Trading Framework - CLI[/bold green]\n\n"
     welcome_content += "[bold]Workflow Steps:[/bold]\n"
-    welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
+    welcome_content += ("Sourced facts → One synthesis → Citation and figure checks; no investment decision\n\n"
+                        if selected_mode == "quick" else
+                        "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n")
     welcome_content += (
         "[dim]Built by [Tauric Research](https://github.com/TauricResearch)[/dim]"
     )
@@ -202,7 +229,9 @@ def _prompt_selections(prefs, flags):
 
     # Step 4: Select analysts
     prefs = sanitize(prefs, asset_type.value)
-    if flags.get("analysts") is not None:
+    if selected_mode == "quick":
+        selected_analysts = []
+    elif flags.get("analysts") is not None:
         selected_analysts = _from_flag(parse_analysts, flags["analysts"], asset_type)
     else:
         console.print(
@@ -211,15 +240,18 @@ def _prompt_selections(prefs, flags):
             )
         )
         selected_analysts = select_analysts(asset_type, prefs.get("analysts"))
-    console.print(
-        f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
-    )
+    if selected_mode == "standard":
+        console.print(
+            f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
+        )
 
     # Step 5: Research depth (skipped when both round counts are set via env).
     # Research depth maps to the debate + risk round counts; when both are
     # supplied through TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS we keep
     # the run non-interactive and honor the env values (#977).
-    if depth_from_env():
+    if selected_mode == "quick":
+        selected_research_depth = None
+    elif depth_from_env():
         selected_research_depth = DEFAULT_CONFIG["max_debate_rounds"]
         console.print(
             f"[green]✓ Research depth from environment:[/green] "
@@ -283,10 +315,20 @@ def _prompt_selections(prefs, flags):
             confirm_ollama_endpoint(backend_url)
 
 
-    _check_tier_providers(selected_llm_provider)
+    _check_tier_providers(selected_llm_provider, selected_mode)
 
     # Step 7: Thinking agents (skipped when either model is set via environment)
-    if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
+    if selected_mode == "quick":
+        selected_deep_thinker = None
+        if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM"):
+            selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
+        else:
+            remembered = prefs if prefs.get("llm_provider") == selected_llm_provider else {}
+            selected_shallow_thinker = select_shallow_thinking_agent(
+                selected_llm_provider, remembered.get("quick_think_llm")
+            )
+        console.print(f"[green]Quick synthesis model:[/green] {selected_shallow_thinker}")
+    elif os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
         selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
         console.print(
@@ -341,6 +383,7 @@ def _prompt_selections(prefs, flags):
         )
 
     return {
+        "research_mode": selected_mode,
         "ticker": selected_ticker,
         "asset_type": asset_type.value,
         "analysis_date": analysis_date,

@@ -7,7 +7,7 @@ from .base_client import BaseLLMClient, normalize_content
 from .telemetry import observe_sdk_transport, observed_async_generation, observed_generation
 
 _PASSTHROUGH_KWARGS = (
-    "timeout", "max_retries", "api_key", "reasoning_effort", "temperature",
+    "timeout", "max_retries", "max_tokens", "api_key", "reasoning_effort", "temperature",
     "callbacks", "http_client", "http_async_client",
 )
 

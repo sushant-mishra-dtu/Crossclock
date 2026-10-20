@@ -70,9 +70,18 @@ class BedrockClient(BaseLLMClient):
         bearer_token = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
         if bearer_token:
             llm_kwargs["api_key"] = bearer_token
-        for key in ("temperature", "max_tokens", "max_retries", "callbacks"):
+        for key in ("temperature", "max_tokens", "callbacks"):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
+        if "max_retries" in self.kwargs:
+            # Converse's model kwargs do not configure botocore's transport retries.
+            # total_max_attempts includes the initial request, unlike max_retries.
+            from botocore.config import Config
+
+            transport = {"retries": {"total_max_attempts": self.kwargs["max_retries"] + 1, "mode": "standard"}}
+            if self.kwargs.get("timeout"):
+                transport.update({"read_timeout": self.kwargs["timeout"], "connect_timeout": self.kwargs["timeout"]})
+            llm_kwargs["config"] = Config(**transport)
         return observe_sdk_transport(chat_cls(**llm_kwargs), "bedrock", sdk="bedrock")
 
     def validate_model(self) -> bool:

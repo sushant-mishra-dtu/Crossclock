@@ -28,7 +28,7 @@ from tradingagents.llm_clients.model_catalog import get_model_options
 _PREFS_PATH = Path(os.path.expanduser("~")) / ".tradingagents" / "cli_prefs.json"
 
 REMEMBERED = (
-    "output_language", "analysts", "research_depth", "llm_provider",
+    "research_mode", "output_language", "analysts", "research_depth", "llm_provider",
     "quick_think_llm", "deep_think_llm", "backend_url",
 )
 
@@ -49,6 +49,8 @@ def load_last_run() -> dict:
 def save_last_run(selections: dict) -> None:
     """Record the answers worth offering next time; failure is never fatal."""
     kept = {k: v for k, v in selections.items() if k in REMEMBERED and v not in (None, "", [])}
+    if kept.get("research_mode") not in ("standard", "quick"):
+        kept.pop("research_mode", None)
     kept["analysts"] = [getattr(a, "value", a) for a in kept.get("analysts", [])] or None
     kept = {k: v for k, v in kept.items() if v is not None}
     try:
@@ -62,6 +64,8 @@ def save_last_run(selections: dict) -> None:
 def sanitize(prefs: dict, asset_type) -> dict:
     """Keep only the remembered answers that are still choosable now."""
     kept: dict = {}
+    if prefs.get("research_mode") in ("standard", "quick"):
+        kept["research_mode"] = prefs["research_mode"]
     if isinstance(prefs.get("output_language"), str):
         kept["output_language"] = prefs["output_language"]
     if prefs.get("research_depth") in (1, 3, 5):

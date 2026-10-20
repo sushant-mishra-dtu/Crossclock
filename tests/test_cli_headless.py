@@ -19,6 +19,11 @@ UNATTENDED_ENV = {
 FLAGS = {"ticker": "NVDA", "date": "2026-09-23", "analysts": "market,news", "save": True, "show": False}
 
 
+@pytest.fixture(autouse=True)
+def _standard_mode(monkeypatch):
+    monkeypatch.setattr(selections, "select_research_mode", lambda default=None: "standard")
+
+
 @pytest.mark.unit
 class TestFlagValues:
     def test_a_ticker_is_normalised_and_an_empty_one_refused(self):

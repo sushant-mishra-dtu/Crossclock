@@ -58,6 +58,8 @@ TEAMS = {
 }
 
 SECTION_TITLES = {
+    "quick_facts": "Sourced facts and headlines",
+    "quick_brief": "Quick research brief",
     "market_report": "Market Analyst",
     "sentiment_report": "Sentiment Analyst",
     "news_report": "News Analyst",
@@ -131,13 +133,20 @@ class AnalysisJob:
     partial_report_path: Path | None = None
 
     def __post_init__(self):
-        self.analysts = [a for a in ANALYST_ORDER if a in set(self.analysts)]
-        if not self.analysts:
+        from tradingagents.modes import mode_config, research_mode
+
+        self.config = mode_config(self.config)
+        quick = research_mode(self.config) == "quick"
+        self.analysts = [] if quick else [a for a in ANALYST_ORDER if a in set(self.analysts)]
+        if not self.analysts and not quick:
             raise ValueError("Pick at least one analyst.")
         # Fails here, at submission, on a misconfigured research budget.
         RunBudget.from_config(self.config)
         self.buffer = MessageBuffer(max_length=500)
         self.buffer.init_for_analysis(self.analysts)
+        if quick:
+            self.buffer.agent_status = {"Acquisition": "pending", "Synthesis": "pending", "Checks": "pending"}
+            self.buffer.report_sections = {"quick_facts": "", "quick_brief": ""}
         self.stats = StatsCallbackHandler()
         self.lock = threading.Lock()
         self._cancel = threading.Event()
@@ -158,6 +167,8 @@ class AnalysisJob:
             "entrypoint": "webui",
         })
         self.stats.trace = self.trace
+        if self.config["research_mode"] == "quick":
+            self.trace.gap("quick_worker_transport_usage_not_observed")
         self.trace.milestone("submitted")
         self.trace.gap("first_useful_result_render_unobserved")
         self.trace.gap("final_report_validation_unobserved")
@@ -203,7 +214,10 @@ class AnalysisJob:
         with self.lock:
             self.buffer.add_message("System", reason)
             self.status = CANCELLED
-            self.completion = run_completion({}, self.analysts, stop_reason=STOP_CANCELLED)
+            self.completion = ({"state": "none", "mode": "quick", "decision_eligible": False,
+                                "stop_reason": STOP_CANCELLED, "stages": {}, "missing": [], "checks": {}, "gaps": []}
+                               if self.config["research_mode"] == "quick" else
+                               run_completion({}, self.analysts, stop_reason=STOP_CANCELLED))
             self.finished = time.time()
         self._finish_trace()
 
@@ -235,14 +249,24 @@ class AnalysisJob:
 
     def snapshot(self) -> dict:
         """A consistent copy of everything the page shows."""
+        from tradingagents.modes import mode_view
+
         with self.lock:
+            stats = self.stats.get_stats()
+            if self.config["research_mode"] == "quick":
+                usage = (self.final_state or {}).get("usage") or {}
+                stats.update({"llm_calls": None, "tool_calls": None,
+                              "tokens_in": usage.get("input_tokens"),
+                              "tokens_out": usage.get("output_tokens"),
+                              "cached_input_tokens": None, "usage_missing": None})
             return {
+                "mode": mode_view(self.config),
                 "status": self.status,
                 "agent_status": dict(self.buffer.agent_status),
                 "sections": dict(self.buffer.report_sections),
                 "messages": list(self.buffer.messages),
                 "tool_calls": list(self.buffer.tool_calls),
-                "stats": self.stats.get_stats(),
+                "stats": stats,
                 "elapsed": self.elapsed(),
                 "rating": self.rating,
                 "error": self.error,
@@ -264,7 +288,58 @@ class AnalysisJob:
 
     def _run(self) -> None:
         with use_trace(self.trace):
-            self._run_traced()
+            if self.config["research_mode"] == "quick":
+                self._run_quick()
+            else:
+                self._run_traced()
+
+    def _run_quick(self) -> None:
+        from tradingagents.quick import run_quick
+
+        def event(value):
+            with self.lock:
+                if value.get("type") == "stage":
+                    for key, status in self.buffer.agent_status.items():
+                        if status == "in_progress":
+                            self.buffer.agent_status[key] = "completed"
+                    self.buffer.agent_status[value["stage"]] = "in_progress"
+                if value.get("type") == "evidence":
+                    acquisitions = value.get("acquisitions") or []
+                    provenance = "; ".join(str(a.get("source") or "unknown") + ", fetched "
+                                            + str(a.get("fetched_at") or "unknown") for a in acquisitions)
+                    self.buffer.report_sections["quick_facts"] += (
+                        f"### {value['tool']} ({value['coverage']})\n"
+                        f"Source: {provenance}; as of {self.trade_date}.\n\n{value['text']}\n\n")
+
+        try:
+            result = run_quick(self.ticker, self.trade_date, config=self.config,
+                               control=self.control, on_event=event, asset_type=self.asset_type)
+            with self.lock:
+                self.final_state, self.completion = result.state, result.completion
+                self.report_path = result.path
+                self.rating = None
+                self.buffer.report_sections["quick_brief"] = result.path.read_text(encoding="utf-8")
+                self.status = (DONE if is_complete(result.completion) else CANCELLED
+                               if result.completion["stop_reason"] == STOP_CANCELLED else FAILED)
+                self.error = None if self.status == DONE else result.completion.get("detail")
+                if self.status != DONE:
+                    self.partial_report_path = result.path
+                for key, phase_status in self.buffer.agent_status.items():
+                    if self.status == DONE:
+                        self.buffer.agent_status[key] = "completed"
+                    elif phase_status == "in_progress":
+                        self.buffer.agent_status[key] = "stopped" if self.status == CANCELLED else "failed"
+                self.buffer.add_message("System", "Quick research: no investment decision produced.")
+            self.trace.milestone("persisted_report" if self.status == DONE else "persisted_partial_report")
+            self.trace.gap("quick_worker_transport_usage_not_observed")
+        except Exception as exc:
+            with self.lock:
+                self.status = CANCELLED if self._cancel.is_set() else FAILED
+                self.error = f"Quick result could not be saved ({type(exc).__name__})."
+                self.rating = None
+        finally:
+            self.finished = time.time()
+            self._finish_trace()
 
     def _run_traced(self) -> None:
         # Imported here so a missing provider SDK surfaces as this run's error.
@@ -438,6 +513,11 @@ class BacktestJob:
     initial_logged: int = 0
 
     def __post_init__(self):
+        from tradingagents.modes import mode_config, require_standard
+
+        require_standard(self.config)
+        self.config = mode_config(self.config)
+        self.tickers, self.dates, self.analysts = list(self.tickers), list(self.dates), list(self.analysts)
         self.run_id = safe_ticker_component(self.run_id)
         self.current: tuple[str, str] | None = None  # (ticker, date) of the running cell
         self._cancel = threading.Event()
@@ -625,6 +705,7 @@ class AnalysisQueue:
             if isinstance(job, AnalysisJob):
                 runs.append({"id": job.id, "ticker": job.ticker, "date": job.trade_date, "status": job.status,
                              "rating": job.rating, "elapsed": job.elapsed(),
+                             "mode": job.config["research_mode"], "budgetSeconds": RunBudget.from_config(job.config).deadline_seconds,
                              "position": waiting.index(job.id) + 1 if job.id in waiting else None})
         return {"current": current, "waiting": len(waiting), "max": self.max_waiting, "runs": runs}
 
@@ -637,8 +718,7 @@ class SavedReport:
     ticker: str
     trade_date: str | None
     modified: datetime
-    # "report" (complete_report.md), "partial" (partial_report.md: a stopped
-    # run's finished sections, with no rating) or "state" (full_states_log JSON)
+    # "report", "partial", "quick" (brief only), or legacy "state" log.
     kind: str
 
     @property
@@ -665,7 +745,7 @@ def list_saved_reports(results_dir) -> list[SavedReport]:
     if not root.exists():
         return []
     found = []
-    for name, kind in (("complete_report.md", "report"), ("partial_report.md", "partial")):
+    for name, kind in (("complete_report.md", "report"), ("partial_report.md", "partial"), ("quick_brief.md", "quick")):
         for path in root.rglob(name):
             ticker, trade_date = _report_header(path)
             found.append(SavedReport(path, ticker, trade_date, _mtime(path), kind))
@@ -694,7 +774,8 @@ def _report_header(path: Path) -> tuple[str, str | None]:
         return ticker, None
     for line in head:
         line = line.removeprefix("- ")  # the header lists what produced the run
-        if line.startswith(("# Trading Analysis Report:", "# Partial Research Report (incomplete):")):
+        if line.startswith(("# Trading Analysis Report:", "# Partial Research Report (incomplete):",
+                            "# Quick research:")):
             ticker = line.split(":", 1)[1].strip()
         elif line.startswith("Analysis date:"):
             trade_date = line.split(":", 1)[1].strip() or None
@@ -703,6 +784,8 @@ def _report_header(path: Path) -> tuple[str, str | None]:
 
 def load_report_sections(report: SavedReport) -> list[tuple[str, str]]:
     """(title, markdown) sections of a saved report, in pipeline order."""
+    if report.kind == "quick":
+        return [("Quick research brief", report.path.read_text(encoding="utf-8"))]
     if report.kind in ("report", "partial"):
         # The Sources appendix after section V (docs/adr/0003) is not part of it.
         # Only its exact opening is cut: an analyst's own text may hold "## " headings.

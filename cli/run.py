@@ -20,7 +20,7 @@ from cli.display import (
     process_chunk,
     update_display,
 )
-from cli.selections import depth_from_env, get_user_selections, unattended_gaps
+from cli.selections import depth_from_env, get_user_selections, resolve_mode, unattended_gaps
 from cli.stats_handler import StatsCallbackHandler
 from tradingagents.agents.rating import is_review, run_rating
 from tradingagents.completion import (
@@ -75,7 +75,21 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     Round counts and checkpoint follow "explicit env/flag wins": an env-applied
     value on DEFAULT_CONFIG is preserved unless the user overrode it on the CLI.
     """
-    config = DEFAULT_CONFIG.copy()
+    from copy import deepcopy
+
+    from tradingagents.modes import mode_config, research_mode
+
+    config = deepcopy(DEFAULT_CONFIG)
+    config["research_mode"] = selections.get("research_mode", "standard")
+    if research_mode(config) == "quick":
+        if checkpoint is True:
+            raise ValueError("Quick does not support checkpoint resume; start a new run.")
+        for key in ("quick_think_llm", "backend_url", "llm_provider", "output_language",
+                    "google_thinking_level", "openai_reasoning_effort", "anthropic_effort"):
+            if key in selections:
+                config[key] = selections[key]
+        config["llm_provider"] = config["llm_provider"].lower()
+        return mode_config(config)
     # Research depth sets both round counts, but an explicit env override
     # (TRADINGAGENTS_MAX_DEBATE_ROUNDS / _MAX_RISK_ROUNDS) wins over the
     # interactive selection — leave the env-applied value in place (#977).
@@ -105,11 +119,20 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
         config["checkpoint_enabled"] = checkpoint
-    return config
+    return mode_config(config)
 
 
 def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
     flags = flags or {}
+    # Reject invalid/unavailable modes before key checks, missing-prompt errors,
+    # model setup or any decision graph initialization.
+    from cli.prefs import load_last_run
+
+    try:
+        resolve_mode(flags, load_last_run())
+    except ValueError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(code=1) from None
     # With no terminal nothing can answer a prompt: name every question still
     # open before any model is called, rather than stopping at the first one.
     if not (sys.stdin and sys.stdin.isatty()):
@@ -122,7 +145,14 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
 
     selections = get_user_selections(flags)
 
-    config = _build_run_config(selections, checkpoint)
+    try:
+        config = _build_run_config(selections, checkpoint)
+    except ValueError as exc:
+        console.print(str(exc), style="red", markup=False)
+        raise typer.Exit(code=1) from None
+
+    if config.get("research_mode") == "quick":
+        return _run_quick_analysis(selections, config, flags)
 
     stats_handler = StatsCallbackHandler()
 
@@ -341,6 +371,56 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
     _offer_reports(final_state, graph, selections["ticker"],
                    save=flags.get("save"), show=flags.get("show"), html=flags.get("html"),
                    completion=completion)
+
+
+def _run_quick_analysis(selections, config, flags):
+    """A Quick brief never constructs the Standard graph or its memory clients."""
+    from tradingagents.modes import mode_view
+    from tradingagents.quick import quick_markdown, run_quick
+
+    settings = mode_view(config)
+    console.print("\n[bold cyan]Quick research — No investment decision produced; no rating.[/bold cyan]")
+    console.print(settings["scope"], markup=False)
+    console.print(settings["exclusions"], markup=False)
+    console.print(f"Provider/model: {settings['provider']} / {settings['model']}", markup=False)
+    console.print(f"Active budget: {settings['deadlineSeconds']} seconds, excluding queue time. ETA and cost unknown.")
+    save = flags.get("save")
+    if save is None:
+        save = _yes("Save the Quick brief?")
+
+    def event(value):
+        if value.get("type") == "stage":
+            console.print(f"Quick: {value['stage']}", markup=False)
+        elif value.get("type") == "evidence" and flags.get("show") is True:
+            arguments = value.get("arguments") or {}
+            console.print(
+                f"\nSource: {value.get('tool', 'unknown')} ({value.get('coverage', 'unknown')}); "
+                f"as of {arguments.get('as_of', arguments.get('end_date', 'unknown'))}.", markup=False)
+            for acquisition in value.get("acquisitions") or []:
+                console.print(
+                    f"Read from {acquisition.get('source', 'unknown')}; "
+                    f"fetched {acquisition.get('fetched_at', 'unknown')}.", markup=False)
+            console.print(str(value.get("text", "")), markup=False)
+
+    result = run_quick(selections["ticker"], selections["analysis_date"], config=config,
+                       asset_type=selections.get("asset_type", "stock"),
+                       on_event=event, save=save, html=flags.get("html") is not False)
+    state = result.completion["state"]
+    console.print(f"Quick result: {state}. No investment decision produced; no rating.", markup=False)
+    if result.completion.get("detail"):
+        console.print(result.completion["detail"], markup=False)
+    if result.path is not None:
+        console.print(f"Quick brief: {result.path.resolve()}", markup=False)
+    show = flags.get("show")
+    if show is None:
+        show = _yes("Display the Quick brief on screen?")
+    if show:
+        from rich.markdown import Markdown
+
+        console.print(Markdown(quick_markdown(result.state, result.completion, result.settings)))
+    if state not in ("complete", "complete_with_gaps"):
+        raise typer.Exit(code=130 if result.completion.get("stop_reason") == "cancelled" else 1)
+    return result
 
 
 def _report_stop(exc: BaseException, graph, config: dict, analysts: list[str], final_state: dict,

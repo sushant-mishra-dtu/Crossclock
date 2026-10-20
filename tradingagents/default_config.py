@@ -8,6 +8,7 @@ _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 # of the existing default, so users can keep writing plain strings in
 # their .env file.
 _ENV_OVERRIDES = {
+    "TRADINGAGENTS_RESEARCH_MODE":        "research_mode",
     "TRADINGAGENTS_LLM_PROVIDER":         "llm_provider",
     "TRADINGAGENTS_DEEP_THINK_LLM":       "deep_think_llm",
     "TRADINGAGENTS_QUICK_THINK_LLM":      "quick_think_llm",
@@ -84,6 +85,9 @@ def _apply_env_overrides(config: dict) -> dict:
             config[key] = _coerce(raw, config.get(key))
         except ValueError as exc:
             raise ValueError(f"Invalid value for {env_var}: {exc}") from exc
+    from tradingagents.modes import research_mode
+
+    research_mode(config)
     return config
 
 

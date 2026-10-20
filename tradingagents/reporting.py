@@ -39,6 +39,8 @@ def _header(ticker: str, final_state: dict, settings: dict | None, completion: d
     lines.append(f"- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     if settings:
         s = settings.get
+        if s("research_mode"):
+            lines.append(f"- Research mode: {s('research_mode')}")
         deep_provider = s("deep_think_provider") or s("llm_provider", "?")
         quick_provider = s("quick_think_provider") or s("llm_provider", "?")
         if deep_provider == quick_provider:
@@ -198,6 +200,13 @@ def report_dir(results_dir, ticker: str, suffix: str = "") -> Path:
 
 def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool, completion,
                 name: str, evidence_store=None) -> Path:
+    from tradingagents.modes import require_decision_state
+
+    require_decision_state(final_state)
+    require_decision_state(settings or {})
+    if completion is not None:
+        require_decision_state({"research_mode": completion.get("mode", "standard"),
+                                "decision_eligible": completion.get("decision_eligible")})
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     parts = _report_parts(final_state)
@@ -214,6 +223,15 @@ def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool,
         (save_path / "1_analysts" / "sentiment_judgments.json").write_text(
             json.dumps(final_state["sentiment_judgments"], indent=2), encoding="utf-8")
 
+    if settings and settings.get("research_mode") == "standard":
+        keys = ("research_mode", "output_kind", "policy", "deadline_seconds", "attempt_timeout_seconds",
+                "version", "llm_provider", "deep_think_provider", "deep_think_llm",
+                "quick_think_provider", "quick_think_llm", "analysts", "max_debate_rounds",
+                "max_risk_discuss_rounds", "output_language", "data_vendors", "tool_vendors")
+        (save_path / "run_metadata.json").write_text(
+            json.dumps({k: settings[k] for k in keys if k in settings}, indent=2), encoding="utf-8")
+        if completion is not None:
+            completion = {**completion, "mode": "standard", "output_kind": "report"}
     if completion is not None:
         (save_path / "run_status.json").write_text(json.dumps(completion, indent=2), encoding="utf-8")
     # What the analysts read, and the claim check as data, for the brief (docs/adr/0003).
@@ -248,6 +266,9 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
     ``evidence_store`` is where the run kept the texts its analysts read
     (``provenance.store_dir(config)``; docs/adr/0003).
     """
+    from tradingagents.modes import require_decision_state
+
+    require_decision_state(final_state)
     if completion is not None and not is_complete(completion):
         raise ValueError("an incomplete run is saved with write_partial_report, not as a complete report")
     return _write_tree(final_state, ticker, save_path, settings, html, completion, "complete_report",

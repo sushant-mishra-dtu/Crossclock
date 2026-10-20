@@ -27,6 +27,11 @@ SAVED = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _standard_mode(monkeypatch):
+    monkeypatch.setattr(cli_selections, "select_research_mode", lambda default=None: "standard")
+
+
 @pytest.mark.unit
 def test_round_trip():
     save_last_run(SAVED)

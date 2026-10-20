@@ -78,6 +78,9 @@ class TradingAgentsGraph:
             config: Configuration dictionary. If None, uses default config
             callbacks: Optional list of callback handlers (e.g., for tracking LLM/tool stats)
         """
+        from tradingagents.modes import require_standard
+
+        require_standard(config or DEFAULT_CONFIG)
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
@@ -217,6 +220,9 @@ class TradingAgentsGraph:
         lived only inside ``propagate`` and the CLI streamed the checkpointer-less
         graph, making the flag a no-op.
         """
+        from tradingagents.modes import require_standard
+
+        require_standard(self.config)
         self._resuming = False
         if not self.config.get("checkpoint_enabled"):
             return None
@@ -228,12 +234,18 @@ class TradingAgentsGraph:
         step = checkpoint_step(
             self.config["data_cache_dir"], company_name, str(trade_date), signature
         )
+        checkpoint_id = thread_id(company_name, str(trade_date), signature)
+        if step is not None:
+            from tradingagents.modes import require_decision_state
+
+            saved = self.graph.get_state({"configurable": {"thread_id": checkpoint_id}})
+            require_decision_state(dict(saved.values or {}))
         self._resuming = step is not None
         if step is not None:
             logger.info("Resuming from step %d for %s on %s", step, company_name, trade_date)
         else:
             logger.info("Starting fresh for %s on %s", company_name, trade_date)
-        return thread_id(company_name, str(trade_date), signature)
+        return checkpoint_id
 
     def checkpoint_input(self, init_state):
         """The value to stream/invoke: ``None`` to resume an existing checkpoint,
@@ -275,8 +287,14 @@ class TradingAgentsGraph:
         An allowlist: endpoints (a backend_url can carry credentials), keys and
         local paths are never recorded.
         """
+        from tradingagents.run_control import RunBudget
+
         cfg = self.config
+        budget = RunBudget.from_config(cfg)
         return {
+            "research_mode": "standard", "output_kind": "report", "policy": "standard",
+            "deadline_seconds": budget.deadline_seconds,
+            "attempt_timeout_seconds": budget.attempt_timeout_seconds,
             "version": tradingagents.__version__,
             "llm_provider": cfg.get("llm_provider"),
             "deep_think_provider": tier_provider(cfg, "deep") if cfg.get("llm_provider") else None,
@@ -394,6 +412,11 @@ class TradingAgentsGraph:
     def record_decision(self, company_name, trade_date, final_state):
         """Record a finished run: its state log, and its decision in the memory log
         for reflection on the next same-ticker run. propagate() and the CLI both end here."""
+        from tradingagents.modes import require_decision_state, require_standard
+
+        require_decision_state(final_state)
+
+        require_standard(self.config)
         trace = current_trace()
         with trace.scope("persistence", "state_log") if trace else nullcontext():
             self._log_state(trade_date, final_state)
@@ -496,6 +519,12 @@ class TradingAgentsGraph:
 
     def _log_state(self, trade_date, final_state):
         """Write a run's final state to JSON under the run's own ticker."""
+        from tradingagents.modes import require_decision_state
+
+        require_decision_state(final_state)
+        from tradingagents.modes import require_standard
+
+        require_standard(self.config)
         entry = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],

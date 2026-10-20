@@ -166,11 +166,13 @@ function initSettings() {
   // Older saves stored checkpoint=false as the old default; honor only an explicit toggle.
   if (!saved.checkpointSet) delete saved.checkpoint;
   settings = {
-    provider: d.provider, quick: d.quick, deep: d.deep, depth: d.depth, language: d.language,
+    mode: d.mode || 'standard', provider: d.provider, quick: d.quick, deep: d.deep, depth: d.depth, language: d.language,
     effort: null, backendUrl: '', checkpoint: d.checkpoint, custom: { quick: false, deep: false },
     ...saved,
   };
   if (!OPTIONS.providers.some((p) => p.key === settings.provider)) settings.provider = OPTIONS.providers[0].key;
+  if (OPTIONS.modeFromEnv) settings.mode = d.mode;
+  if (!['quick', 'standard'].includes(settings.mode)) settings.mode = 'standard';
   fillModels(false);
 }
 
@@ -188,12 +190,36 @@ function fillModels(reset) {
 
 function saveSettings() { store.set(SETTINGS_KEY, settings); }
 
-function runSettings() {
+function runSettings(mode = settings.mode) {
   return {
+    mode,
     provider: settings.provider, quick: settings.quick, deep: settings.deep, depth: settings.depth,
     language: settings.language, effort: settings.effort, backendUrl: settings.backendUrl,
     checkpoint: settings.checkpoint,
   };
+}
+
+/** Effective scope next to Run; changing settings never mutates an existing job. */
+function renderRunScope() {
+  const box = $('#f-scope');
+  if (!box) return;
+  const quick = settings.mode === 'quick';
+  const policy = (OPTIONS.modePolicies || {})[settings.mode] || {};
+  const override = OPTIONS.roundOverrides || {};
+  const rounds = OPTIONS.depths[settings.depth] || 1;
+  const research = override.max_debate_rounds ?? rounds;
+  const risk = override.max_risk_discuss_rounds ?? rounds;
+  const effectiveProvider = quick && OPTIONS.quickProviderOverride ? OPTIONS.quickProviderOverride : provider().name;
+  const scope = quick ? 'Local point-in-time facts, one 30-day price window and up to 8 dated headlines from the last 7 days, followed by one synthesis.'
+    : `Selected specialists, ${research} research round${research === 1 ? '' : 's'} and ${risk} risk round${risk === 1 ? '' : 's'}, then an investment decision.${research !== 1 || risk !== 1 ? ' Customized Standard rounds.' : ''}`;
+  box.innerHTML = `<strong>${quick ? 'Quick brief · No investment decision produced' : 'Standard research'}</strong>
+    <p class="hint">${esc(scope)}</p>
+    <p class="hint">${quick ? 'No social feeds, remote financial statements, filing retrieval, decision memory, rating or checkpoint resume. Missing local financials are shown as a gap. Qualitative source support is not checked.' : 'Research depth changes discussion rounds within Standard. Deep research mode is planned separately.'}</p>
+    <p class="hint">${esc(effectiveProvider)} · ${esc(settings.quick || 'model not selected')}${quick ? '' : ' / ' + esc(settings.deep || 'deep-thinking model not selected')} · Active budget ${esc(policy.deadlineSeconds || (quick ? 60 : 1200))} seconds, excluding queue time. ETA and anticipated cost unavailable.</p>`;
+  $('#f-standard-analysts').hidden = quick;
+  $('#f-portfolio-label').hidden = quick;
+  $('#f-portfolio-status').hidden = quick;
+  $('#f-submit').innerHTML = I.play + (quick ? 'Run Quick brief' : 'Run analysis');
 }
 
 /* Sidebar ------------------------------------------------------------------- */
@@ -258,6 +284,7 @@ function modelField(mode) {
 
 function settingsForm() {
   const p = provider();
+  const quickMode = settings.mode === 'quick';
   const providers = OPTIONS.providers.map((x) => `<option value="${esc(x.key)}" ${x.key === p.key ? 'selected' : ''}>${esc(x.name)}${x.china ? ' · China mainland' : ''}</option>`).join('');
   const depths = Object.keys(OPTIONS.depths).map((d) => `<button type="button" class="b" data-depth="${d}" aria-pressed="${attr(settings.depth === d)}">${d}</button>`).join('');
   const langs = OPTIONS.languages.includes(settings.language) ? settings.language : 'custom';
@@ -265,24 +292,29 @@ function settingsForm() {
   const effort = p.effort ? `<div class="field"><label for="ms-effort">${esc(p.effort.label)}</label>${selectWrap(`<select id="ms-effort" data-setting="effort">${p.effort.choices.map((c) => `<option value="${c}" ${c === settings.effort ? 'selected' : ''}>${c === 'default' ? 'Provider default' : c[0].toUpperCase() + c.slice(1)}</option>`).join('')}</select>`)}</div>` : '';
   return `
     <section class="side-section" aria-labelledby="ms-h">
-      <h2 id="ms-h" class="side-h">Model settings</h2>
+      <h2 id="ms-h" class="side-h">Research settings</h2>
+      <div class="field"><label for="ms-mode">Research mode</label>${selectWrap(`<select id="ms-mode" data-setting="mode">
+        <option value="standard" ${!quickMode ? 'selected' : ''}>Standard</option>
+        <option value="quick" ${quickMode ? 'selected' : ''}>Quick</option>
+        <option value="deep" disabled>Deep — planned</option></select>`)}</div>
+      <p class="hint">Deep needs targeted document retrieval and is not available yet. Model tiers below are separate from research modes.</p>
       <div class="field"><label for="ms-provider">LLM provider</label>${selectWrap(`<select id="ms-provider" data-setting="provider">${providers}</select>`)}</div>
       ${modelField('quick')}
-      ${modelField('deep')}
-      <fieldset class="field"><legend class="legend">Research depth</legend>
-        <div class="seg tight" title="Debate and risk-discussion rounds: 1, 3 or 5">${depths}</div></fieldset>
-      ${keyStatus(p)}
+      ${quickMode ? '<p class="hint">Specialists, deep-thinking model and discussion rounds are outside Quick scope.</p>' : modelField('deep')}
+      ${keyStatus(quickMode && OPTIONS.quickProviderOverride ? provider(OPTIONS.quickProviderOverride) : p)}
       <details class="adv" ${store.get('tradingagents-adv', false) ? 'open' : ''}>
         <summary>${I.chevronRight}Advanced</summary>
         <div>
+          ${quickMode ? '' : `<fieldset class="field"><legend class="legend">Standard discussion rounds</legend><div class="seg tight" title="Research and risk-discussion rounds: 1, 3 or 5">${depths}</div><p class="hint">Shallow / Medium / Deep set round counts within Standard.</p></fieldset>`}
           <div class="field"><label for="ms-lang">Report language</label>${selectWrap(`<select id="ms-lang" data-setting="language-pick">${langOpts}</select>`)}
             ${langs === 'custom' ? `<input class="input" data-setting="language" value="${esc(settings.language)}" aria-label="Language name" placeholder="Language name">` : ''}</div>
           ${effort}
           <div class="field"><label for="ms-url">Backend URL</label>
             <input id="ms-url" class="input mono" data-setting="backendUrl" value="${esc(settings.backendUrl)}" placeholder="${esc(p.url || 'Provider default')}" spellcheck="false" autocomplete="off">
             <p class="hint">Leave empty for the provider's default endpoint.</p></div>
-          <label class="toggle">Checkpoint / resume<input type="checkbox" data-setting="checkpoint" ${settings.checkpoint ? 'checked' : ''}></label>
-          <p class="hint">Saves state after each step, so a stopped or crashed run resumes where it left off. Results go to <span class="mono">${esc(OPTIONS.resultsDir)}</span>.</p>
+          ${quickMode ? '<p class="hint">Quick does not resume checkpoints. Stop retains partial sources; another run starts a new 60-second budget.</p>' : `<label class="toggle">Checkpoint / resume<input type="checkbox" data-setting="checkpoint" ${settings.checkpoint ? 'checked' : ''}></label>
+          <p class="hint">Saves state after each step, so a stopped or crashed Standard run resumes where it left off.</p>`}
+          <p class="hint">Results go to <span class="mono">${esc(OPTIONS.resultsDir)}</span>.</p>
         </div>
       </details>
     </section>`;
@@ -307,10 +339,10 @@ function settingsSummary() {
     <section class="side-section" aria-labelledby="ms-h" style="gap: 10px; padding-bottom: 0;">
       <h2 id="ms-h" class="side-h">Model settings</h2>
       <dl class="summary">
+        <dt>Mode</dt><dd>${activeNav === 'backtest' ? 'Standard (required)' : esc(settings.mode === 'quick' ? 'Quick' : 'Standard')}</dd>
         <dt>Provider</dt><dd>${esc(p.name)}${p.china ? ' (China)' : ''}</dd>
         <dt>Quick</dt><dd class="mono" style="font-size: 12px;">${esc(settings.quick || '—')}</dd>
-        <dt>Deep</dt><dd class="mono" style="font-size: 12px;">${esc(settings.deep || '—')}</dd>
-        <dt>Depth</dt><dd>${esc(settings.depth)}</dd>
+        ${settings.mode === 'quick' && activeNav !== 'backtest' ? '<dt>Scope</dt><dd>Deep model and rounds outside Quick scope</dd>' : `<dt>Deep</dt><dd class="mono" style="font-size: 12px;">${esc(settings.deep || '—')}</dd><dt>Depth</dt><dd>${esc(settings.depth)}</dd>`}
       </dl>
       <a href="/analyze" data-link style="font-size: 13px; font-weight: 500;">Change settings</a>
     </section>`;
@@ -333,7 +365,7 @@ function bindSide() {
     const t = e.target.closest('[data-theme]');
     if (t) { theme.set(t.dataset.theme); renderSide(); return; }
     const d = e.target.closest('[data-depth]');
-    if (d) { settings.depth = d.dataset.depth; saveSettings(); renderSide(); }
+    if (d) { settings.depth = d.dataset.depth; saveSettings(); renderSide(); renderRunScope(); }
   });
   side.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sideOpen) {
@@ -359,8 +391,11 @@ function bindSide() {
     else settings[key] = typeof value === 'string' ? value.trim() : value;
     if (key === 'checkpoint') settings.checkpointSet = true;
     saveSettings();
-    if (rerender && /provider|pick/.test(key)) {
+    renderRunScope();
+    if (rerender && /provider|pick|^mode$/.test(key)) {
       renderSide();
+      renderRunScope();
+      if (key === 'mode') $('#ms-mode').focus();
       if (/-pick/.test(key) && value === 'custom') {
         const input = key === 'language-pick' ? $('#side [data-setting="language"]') : $(`#ms-${key.split('-')[0]}-text`);
         if (input) input.focus();
@@ -620,7 +655,7 @@ PAGES['/analyze'] = {
     if (/^[\w.-]{1,64}$/.test(job)) { analyze.jobId = job; store.set('tradingagents-run', job); }
     main.innerHTML = `
       <div class="stack rise" style="gap: 24px;">
-      ${pageHead('Analyze a ticker', 'Analyst team → Research debate → Trader → Risk debate → Portfolio manager')}
+      ${pageHead('Analyze a ticker', 'Choose a sourced Quick brief or a full Standard investment decision.')}
       <form class="card run-form" id="run-form" aria-labelledby="run-h" novalidate>
         <h2 id="run-h" class="sr">New analysis</h2>
         <div class="top">
@@ -628,13 +663,14 @@ PAGES['/analyze'] = {
             <input id="f-ticker" class="input mono ticker" value="${esc(f.ticker)}" placeholder="AAPL or Apple" aria-describedby="f-ticker-hint" autocomplete="off" spellcheck="false" required></div>
           <div class="field" style="width: 180px;"><label for="f-date">Analysis date</label>
             <input id="f-date" class="input" type="date" value="${esc(f.date)}" max="${OPTIONS.today}" required></div>
-          <fieldset class="grow" style="flex: 1 1 360px;"><legend class="legend">Analysts</legend>
+          <fieldset id="f-standard-analysts" class="grow" style="flex: 1 1 360px;"><legend class="legend">Analysts</legend>
             <div class="chips" id="f-analysts"></div></fieldset>
         </div>
         <p id="f-ticker-hint" class="hint" style="margin-top: -6px;">Type a symbol or a company name (Apple, Reliance Industries, Tencent) and pick a match; it adds the exchange suffix for you. Crypto skips the Fundamentals analyst.</p>
+        <div id="f-scope" class="well-box stack" style="gap: 8px; padding: 14px 16px;" role="note"></div>
         <div class="foot">
           <input id="f-portfolio" type="file" accept=".json,application/json" class="sr">
-          <label for="f-portfolio" class="btn b" title="${esc(OPTIONS.portfolioHelp)}">${I.upload}<span>Portfolio JSON (optional)</span></label>
+          <label id="f-portfolio-label" for="f-portfolio" class="btn b" title="${esc(OPTIONS.portfolioHelp)}">${I.upload}<span>Portfolio JSON (optional)</span></label>
           <span class="grow hint" id="f-portfolio-status"></span>
           <button type="submit" class="btn btn-primary b" id="f-submit">${I.play}Run analysis</button>
         </div>
@@ -644,6 +680,7 @@ PAGES['/analyze'] = {
       </div>`;
     this.renderAnalysts();
     this.renderPortfolio();
+    renderRunScope();
     tickerSearch($('#f-ticker'));
     const form = $('#run-form');
     form.addEventListener('input', (e) => {
@@ -788,10 +825,11 @@ PAGES['/analyze'] = {
     const picker = analyze.jobs.length > 1 && !DEMO ? `<div class="row" style="gap: 8px;"><label for="run-pick" class="faint" style="font-size: 13px;">Run</label>${selectWrap(`<select id="run-pick" class="mono">${analyze.jobs.map((j) => `<option value="${esc(j.id)}" ${j.id === d.id ? 'selected' : ''}>${esc(j.ticker)} · ${esc(j.date)} · ${esc(j.status)}</option>`).join('')}</select>`, 'raised')}</div>` : '';
     // A request already sent is not cut off: it ends or times out, then the run stops.
     const run = d.run || {};
-    const waiting = stopping && run.inFlight
+    const quick = d.mode && d.mode.mode === 'quick';
+    const waiting = quick ? 'Stopping active Quick work; saving partial sources…' : stopping && run.inFlight
       ? `Stopping: waiting for ${run.inFlight} request${run.inFlight === 1 ? '' : 's'} in flight (at most ${Math.round(run.attemptTimeoutSeconds)} s)…`
       : 'Stopping after the current step…';
-    const stop = active ? `<span id="stop-hint" class="faint" style="font-size: 13px;">${stopping ? waiting : 'Stops after the current step'}</span>
+    const stop = active ? `<span id="stop-hint" class="faint" style="font-size: 13px;">${stopping ? waiting : quick ? 'Stops active Quick work and retains partial sources' : 'Stops after the current step'}</span>
       <button type="button" class="btn btn-danger b" data-stop aria-describedby="stop-hint" ${stopping ? 'disabled' : ''}>${I.stop}Stop</button>` : '';
     return `<h2 id="live-h" class="live-title"><span class="mono" style="font-weight: 500;">${esc(d.ticker)}</span> · ${esc(d.date)}</h2>${pill}<div class="grow"></div>${picker}${stop}`;
   },
@@ -804,6 +842,18 @@ PAGES['/analyze'] = {
 
   decisionHtml(d) {
     const c = d.completion;
+    if (d.mode && d.mode.mode === 'quick') {
+      const label = c && ['complete', 'complete_with_gaps'].includes(c.state)
+        ? `Quick brief ${c.state === 'complete_with_gaps' ? 'complete with gaps' : 'complete'}`
+        : d.status === 'pending' ? 'Quick brief queued' : d.status === 'running' ? 'Quick research in progress' : 'Partial Quick output';
+      return `<div class="alert alert-info" role="status">${I.alert}<div class="grow"><strong>${esc(label)}. No investment decision produced.</strong>
+        <p class="hint">${esc(d.mode.scope)} Active budget ${esc(d.mode.deadlineSeconds)} seconds; ETA and cost unavailable. No checkpoint resume.</p>
+        ${c && c.summary ? `<p>${esc(c.summary)}</p>` : ''}
+        ${c && c.gaps && c.gaps.length ? `<p class="hint">${c.gaps.map(esc).join('; ')}</p>` : ''}
+        ${d.reportDir ? `<a href="/reports?id=${encodeURIComponent(d.reportId)}" data-link>Open saved Quick brief and sources</a> · <a href="/api/analyses/${encodeURIComponent(d.id)}/report.md" download>Download Quick brief</a>` : ''}
+        <p><button type="button" class="btn b" data-new-standard>Start a new Standard run</button></p>
+      </div></div>`;
+    }
     if (d.status === 'failed') {
       const [first, ...rest] = String(d.error || 'The run failed.').split('\n\n');
       return `<div class="alert alert-neg">${I.alert}<div class="grow"><div><strong>Incomplete research.</strong> ${esc(first)}</div>${rest.length ? `<details style="margin-top: 6px;"><summary style="cursor: pointer; color: var(--text-2);">Traceback</summary><pre class="mono">${esc(rest.join('\n\n'))}</pre></details>` : ''}${this.partialHtml(d)}</div></div>`;
@@ -836,12 +886,14 @@ PAGES['/analyze'] = {
   metricsHtml(d) {
     const done = d.sections.filter((s) => s.body).length;
     const s = d.stats;
+    const unknown = (v) => v == null ? 'Unavailable' : v;
+    const tokensKnown = s.tokens_in != null && s.tokens_out != null;
     const items = [
       ['Elapsed', duration(d.elapsed), ''],
       ['Reports', `${done}/${d.sections.length}`, ''],
-      ['LLM calls', s.llm_calls, ''],
-      ['Tool calls', s.tool_calls, ''],
-      ['Tokens', kilo(s.tokens_in + s.tokens_out), `${s.tokens_in.toLocaleString()} in · ${s.tokens_out.toLocaleString()} out`],
+      ['LLM calls', unknown(s.llm_calls), ''],
+      ['Tool calls', unknown(s.tool_calls), ''],
+      ['Tokens', tokensKnown ? kilo(s.tokens_in + s.tokens_out) : 'Unavailable', tokensKnown ? `${s.tokens_in.toLocaleString()} in · ${s.tokens_out.toLocaleString()} out` : 'Worker SDK usage was not observed'],
     ];
     // While it runs: the time left before the research mode's deadline stops it.
     if (d.run && d.run.remainingSeconds != null) {
@@ -862,8 +914,8 @@ PAGES['/analyze'] = {
       const rows = agents.map((a) => {
         const st = d.agents[a];
         const icon = st === 'completed' ? I.agentDone : st === 'in_progress' ? I.agentWorking : I.agentWaiting;
-        const label = st === 'completed' ? 'done' : st === 'in_progress' ? 'working' : 'waiting';
-        return `<li class="${st === 'pending' ? 'waiting' : ''}">${icon}<span class="grow">${esc(a)}</span><span class="sr">${label}</span></li>`;
+        const label = st === 'completed' ? 'done' : st === 'in_progress' ? 'working' : st === 'stopped' ? 'stopped' : st === 'failed' ? 'failed' : 'waiting';
+        return `<li class="${st === 'pending' ? 'waiting' : ''}">${icon}<span class="grow">${esc(a)}</span><span class="${['stopped', 'failed'].includes(st) ? 'hint' : 'sr'}">${label}</span></li>`;
       }).join('');
       return `<li class="team lift ${active ? 'active' : complete ? 'done' : ''}">
         <div class="row" style="justify-content: space-between; gap: 8px;"><span class="mono faint" style="font-size: 12px;">0${i + 1}</span><span class="mono" style="font-size: 12px; font-weight: 500; color: ${color};">${n}/${agents.length}</span></div>
@@ -880,7 +932,7 @@ PAGES['/analyze'] = {
     if (analyze.tab === 'reports') {
       const ready = d.sections.filter((s) => s.body);
       if (!ready.length) {
-        body = '<p class="empty">Reports appear here as each agent finishes.</p>';
+        body = `<p class="empty">${d.mode && d.mode.mode === 'quick' ? 'Acquiring sourced facts. If eligible local facts are missing, that gap appears here.' : 'Reports appear here as each agent finishes.'}</p>`;
       } else {
         if (analyze.followNewest || !ready.some((s) => s.key === analyze.section)) analyze.section = ready[ready.length - 1].key;
         const cur = ready.find((s) => s.key === analyze.section);
@@ -924,6 +976,9 @@ PAGES['/analyze'] = {
   },
 
   async onLiveClick(e) {
+    if (e.target.closest('[data-new-standard]')) {
+      settings.mode = 'standard'; saveSettings(); renderSide(); renderRunScope(); $('#f-submit').focus(); return;
+    }
     const d = analyze.detail;
     if (!d) return;
     const tab = e.target.closest('[data-tab]');
@@ -1529,16 +1584,20 @@ async function queueAnalysis(picks, { date = OPTIONS.today, holdings = null } = 
   if (!picks.length || DEMO) return null;
   const p = provider();
   const chosen = analyzeForm().analysts.length ? analyzeForm().analysts.slice() : OPTIONS.defaults.analysts.slice();
-  const body = `<p>This queues <b>${picks.length} full multi-agent analys${picks.length === 1 ? 'is' : 'es'}</b>, run one after another, not at once. Each run makes many LLM calls on your <b>${esc(p.name)}</b> account (${esc(settings.quick)} / ${esc(settings.deep)}, ${esc(settings.depth)} depth), so each one costs money and takes several minutes.</p>
+  const quick = settings.mode === 'quick';
+  const introduction = quick
+    ? `This queues <b>${picks.length} Quick brief${picks.length === 1 ? '' : 's'}</b>, one at a time. Each uses local point-in-time facts, bounded 30-day prices and 7-day news, and at most one synthesis on <b>${esc(p.name)}</b> (${esc(settings.quick)}). Each has a 60-second active budget excluding queue time; ETA and anticipated cost are unavailable. No investment decision or rating is produced. Missing financials remain gaps; qualitative source support is not checked.`
+    : `This queues <b>${picks.length} full Standard analys${picks.length === 1 ? 'is' : 'es'}</b>, one at a time. Each run makes multiple LLM calls on your <b>${esc(p.name)}</b> account (${esc(settings.quick)} / ${esc(settings.deep)}, ${esc(settings.depth)} discussion depth). ETA and anticipated cost are unavailable.`;
+  const body = `<p>${introduction}</p>
     <ol class="sc-dlg-list">${picks.map(([sym, name]) => `<li><span class="mono">${esc(sym)}</span> · ${esc(name)}</li>`).join('')}</ol>
     <div class="field" style="max-width: 220px;"><label for="sc-dlg-date">Analysis date</label><input id="sc-dlg-date" class="input" type="date" value="${esc(date)}" max="${esc(OPTIONS.today)}"></div>
-    <fieldset><legend class="legend">Analysts (fewer is cheaper)</legend><div class="row" style="gap: 6px 16px; flex-wrap: wrap;">${ANALYSTS.map(([id, label]) => `<label class="sc-col"><input type="checkbox" name="sc-dlg-analyst" value="${id}" ${chosen.includes(id) ? 'checked' : ''}>${label}</label>`).join('')}</div></fieldset>
-    ${holdings ? `<label class="sc-col"><input type="checkbox" name="holdings" data-bool checked>Send ${esc(holdings.label)} with each run as its portfolio</label>` : ''}
+    ${quick ? '' : `<fieldset><legend class="legend">Standard analysts</legend><div class="row" style="gap: 6px 16px; flex-wrap: wrap;">${ANALYSTS.map(([id, label]) => `<label class="sc-col"><input type="checkbox" name="sc-dlg-analyst" value="${id}" ${chosen.includes(id) ? 'checked' : ''}>${label}</label>`).join('')}</div></fieldset>`}
+    ${holdings && !quick ? `<label class="sc-col"><input type="checkbox" name="holdings" data-bool checked>Send ${esc(holdings.label)} with each run as its portfolio</label>` : ''}
     <p class="hint">Change the provider and models in the sidebar of the Analyze page.</p>`;
   const ok = await confirmDialog(`Analyze ${picks.length} stock${picks.length === 1 ? '' : 's'} with agents?`, body, `Queue ${picks.length} run${picks.length === 1 ? '' : 's'}`);
   if (!ok) return null;
   try {
-    const portfolio = holdings && ok.fields.holdings ? await holdings.load() : null;
+    const portfolio = !quick && holdings && ok.fields.holdings ? await holdings.load() : null;
     const res = await api('/screen/analyze', { body: { tickers: picks.map(([sym]) => sym), date: ok.date || date, analysts: ok.analysts, settings: runSettings(), portfolio } });
     toast(`Queued ${res.ids.length} run${res.ids.length === 1 ? '' : 's'}; they start one at a time.`);
     return res;
@@ -1560,7 +1619,7 @@ function QueuePanel(el) {
       cancelled: '<span class="pill sm pill-plain">Stopped</span>',
     }[r.status] || esc(r.status));
     const rows = d.runs.map((r) => `<li class="sc-q-row">
-      <span class="mono sc-q-t">${esc(r.ticker)}</span><span class="faint">${esc(r.date)}</span>${pill(r)}${r.rating ? ratingPill(r.rating) : ''}
+      <span class="mono sc-q-t">${esc(r.ticker)}</span><span class="faint">${esc(r.date)} · ${esc(r.mode || 'mode not recorded')}${r.mode === 'quick' ? ' · no decision' : ''}</span>${pill(r)}${r.rating ? ratingPill(r.rating) : ''}
       <span class="grow"></span>
       <a href="/analyze?job=${encodeURIComponent(r.id)}" data-link>Open run${I.arrow}</a>
       ${['pending', 'running'].includes(r.status) ? `<button type="button" class="link-btn sc-danger" data-queue-cancel="${esc(r.id)}">${r.status === 'running' ? 'Stop' : 'Remove'}</button>` : ''}</li>`).join('');
@@ -2719,7 +2778,35 @@ function briefFacts(rows) {
   return `<dl class="bf-facts">${rows.filter(([, v]) => v).map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
 }
 
+function quickBriefView(b) {
+  const q = b.quick;
+  const h = b.header;
+  const p = b.settings || {};
+  const complete = ['complete', 'complete_with_gaps'].includes(b.run.state);
+  const facts = q.facts.map((f) => `<li class="stack" style="gap: 8px;"><div>${sourceButton([f.id], f.id, { mono: true })} <strong>${esc(f.tool)}</strong> ${wordPill(COVERAGE_WORDS[f.coverage] || [f.coverage, 'pill-plain'])}</div>
+    ${f.text ? `<pre class="mono" style="white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px;">${esc(f.text)}</pre>` : '<p class="hint">Verified source text unavailable.</p>'}</li>`).join('');
+  const observations = q.observations.map((o) => `<li class="stack" style="gap: 8px;"><p class="bf-text">${esc(o.text)}</p>
+    <div>${o.evidence_ids.length ? sourceButton(o.evidence_ids, 'Cited sources: ' + o.evidence_ids.join(', ')) : '<span class="hint">No valid source reference.</span>'}</div>
+    ${(o.figures || []).length ? `<ul class="bf-figures">${o.figures.map((f) => `<li>${esc(f.figure)}: ${f.found.length ? f.found.map((x) => sourceButton([x.id], x.id, { figure: f.figure, line: x.line, mono: true })).join(' ') : 'not found in cited sources'}</li>`).join('')}</ul>` : ''}</li>`).join('');
+  return `<div class="brief stack" style="gap: 26px;">
+    <div class="alert alert-info" role="note">${I.alert}<div><strong>${complete ? 'Quick brief complete' : 'Partial Quick output'}${b.run.state === 'complete_with_gaps' ? ' with gaps' : ''}. No investment decision produced.</strong>
+    <p class="hint">Source support not checked for qualitative claims. Figure presence does not prove support. Standard decision checks and memory are outside Quick scope.</p>${b.run.summary ? `<p>${esc(b.run.summary)}</p>` : ''}</div></div>
+    <section class="stack" style="gap: 10px;"><h3 class="bf-h">About this Quick brief</h3>${briefFacts([
+      ['Instrument', esc(h.ticker || '')], ['Data as of', esc(h.analysisDate || '')],
+      ['Mode / policy', 'Quick / ' + esc(p.policy || 'unknown')], ['Run', esc(RUN_STATES[b.run.state] || 'unknown')],
+      ['Model', esc((p.provider || 'unknown') + ' / ' + (p.model || 'unknown'))],
+      ['Active budget', esc(String(p.deadlineSeconds || 60)) + ' seconds; queue time excluded'],
+      ['ETA / anticipated cost', 'Unavailable'], ['Scope', esc(p.scope || '')],
+    ])}</section>
+    <section class="stack" style="gap: 10px;"><h3 class="bf-h">Sourced facts and headlines</h3>${facts ? `<ul class="bf-list">${facts}</ul>` : '<p class="hint">No eligible sourced facts were obtained.</p>'}</section>
+    <section class="stack" style="gap: 10px;"><h3 class="bf-h">Observations</h3>${observations ? `<ol class="bf-list">${observations}</ol>` : `<p class="hint">Synthesis withheld or unavailable. ${esc(q.validationReason || '')}</p>`}</section>
+    <section class="stack" style="gap: 10px;"><h3 class="bf-h">Gaps and research questions</h3><ul class="bf-list">${q.gaps.map((g) => `<li>${esc(g)}</li>`).join('')}${q.questions.map((g) => `<li>Research question: ${esc(g)}</li>`).join('')}</ul></section>
+    <p class="hint"><a href="/analyze?ticker=${encodeURIComponent(h.ticker || '')}" data-link>Open Analyze to start a new Standard run</a>; select Standard explicitly for a full decision.</p>
+  </div>`;
+}
+
 function briefView(b) {
+  if (b.mode === 'quick') return quickBriefView(b);
   const h = b.header;
   const run = b.run;
   const parts = [];
@@ -2958,17 +3045,18 @@ PAGES['/reports'] = {
     const runLine = !c ? '' : c.state === 'complete' ? 'Run complete'
       : c.state === 'complete_with_gaps' ? `Complete with gaps: ${c.gaps.join('; ')}` : (c.summary || RUN_STATES[c.state] || '');
     const cards = reports.list.map((r) => `<li><button type="button" class="report-card b" data-report="${esc(r.id)}" aria-pressed="${attr(r.id === reports.id)}">
-      <span class="stack" style="gap: 2px; align-items: flex-start; min-width: 0;"><span class="mono" style="font-size: 15px; font-weight: 500;">${esc(r.ticker)}</span><span class="faint" style="font-size: 13px;">${esc(r.date || r.modified)}${r.kind === 'state' ? ' · state log' : r.kind === 'partial' ? ' · partial, no rating' : ''}</span></span>
+      <span class="stack" style="gap: 2px; align-items: flex-start; min-width: 0;"><span class="mono" style="font-size: 15px; font-weight: 500;">${esc(r.ticker)}</span><span class="faint" style="font-size: 13px;">${esc(r.date || r.modified)}${r.kind === 'quick' ? ' · Quick, no investment decision' : r.kind === 'state' ? ' · state log' : r.kind === 'partial' ? ' · partial, no rating' : ''}</span></span>
       ${r.rating ? ratingPill(r.rating) : ''}</button></li>`).join('');
     body.innerHTML = `<div class="reports-layout">
       <section class="report-list" aria-labelledby="list-h"><h2 id="list-h" class="label-h">Saved reports</h2><ul>${cards}</ul></section>
       <article class="card report-view" aria-labelledby="rep-h">
         <div class="row" style="gap: 24px; flex-wrap: wrap;">
-          ${d.kind === 'partial' ? '' : plate(d.rating)}
+          ${['partial', 'quick'].includes(d.kind) ? '' : plate(d.rating)}
           <div class="grow stack" style="gap: 4px;">
             <h2 id="rep-h" style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em;"><span class="mono" style="font-weight: 500; letter-spacing: 0;">${esc(d.ticker)}</span> · ${esc(d.date || d.modified)}</h2>
-            <span class="muted" style="font-size: 14px;">${d.kind === 'partial' ? 'Partial report: the run stopped before it finished; no rating, not a decision' : "Portfolio manager's call"}${d.date ? ` · saved ${esc(d.modified)}` : ''}</span>
+            <span class="muted" style="font-size: 14px;">${d.kind === 'quick' ? 'Quick brief · No investment decision produced' : d.kind === 'partial' ? 'Partial report: the run stopped before it finished; no rating, not a decision' : "Portfolio manager's call"}${d.date ? ` · saved ${esc(d.modified)}` : ''}</span>
             ${runLine ? `<span class="hint">${esc(runLine)}</span>` : ''}
+            <span class="hint">${d.mode ? esc(d.mode.mode === 'quick' ? 'Quick · ' + d.mode.policy : 'Standard') : 'Mode not recorded'}</span>
           </div>
           <div class="row" style="gap: 8px; flex-wrap: wrap;">
             ${d.hasJudgments ? `<a class="btn b" href="/sentiment?report=${encodeURIComponent(d.id)}" data-link>Item judgments${I.arrow}</a>` : ''}
@@ -3155,7 +3243,7 @@ PAGES['/backtest'] = {
       const analysts = f.analysts.filter((a) => !(f.asset === 'crypto' && a === 'fundamentals'));
       const res = await api('/backtests', { body: {
         tickers: f.tickers, from: f.from, to: f.to, every: f.every, analysts, assetType: f.asset,
-        runId: f.runId, portfolio: f.portfolio, settings: runSettings(),
+        runId: f.runId, portfolio: f.portfolio, settings: runSettings('standard'),
       } });
       backtest.view = res.runId;
       backtest.started = res.id;
