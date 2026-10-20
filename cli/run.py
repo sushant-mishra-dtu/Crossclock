@@ -35,6 +35,7 @@ from tradingagents.completion import (
     run_completion,
     stop_reason_for,
 )
+from tradingagents.dataflows.provenance import store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.analyst_execution import (
@@ -359,7 +360,8 @@ def _report_stop(exc: BaseException, graph, config: dict, analysts: list[str], f
             settings = graph.run_settings() if hasattr(graph, "run_settings") else None
             path = write_partial_report(final_state, ticker,
                                         stamped_report_dir(config["results_dir"], ticker, "_partial"),
-                                        completion, settings=settings)
+                                        completion, settings=settings,
+                                        evidence_store=store_dir(config))
             console.print(f"[yellow]What it finished is saved as a partial report, with no rating:[/yellow] "
                           f"{path.parent.resolve()}")
         except Exception as save_exc:

@@ -7,8 +7,10 @@ only, no brief fields the run does not produce, source texts kept locally and ou
 of downloads, and currency "not recorded" unless a source states it. Task: C05 in the
 [plan](../plan.md) and [progress tracker](../progress.md). It builds on C04's
 evidence records ([ADR 0002](0002-shared-evidence-and-bounded-retrieval.md)).
-Evidence class: source reviewed. No provider or data vendor was called, and no
-code has changed.
+**Implemented** on 19-20 October 2026 and fixture tested, with a keyboard and
+mobile walkthrough recorded; see [Implementation](#implementation-20-october-2026).
+Evidence class for the proposal: source reviewed; for the implementation:
+fixture tested. No provider or data vendor was called.
 
 The plan's acceptance for C05: a user can inspect sources, dates, units and gaps
 for an existing report; partial and unchecked states stay visible; a keyboard
@@ -182,3 +184,101 @@ so C01's configuration hash and the bounded-execution rules stay as they are.
 4. **Currency.** (A, recommended) "Not recorded" unless a source states it.
    (B) Infer it from the exchange suffix (`.NS` and `.BO` as INR), labelled
    inferred.
+
+## Implementation, 20 October 2026
+
+Built test-first, offline only, in the order of the sections above. The pieces:
+
+| Piece | Where |
+| --- | --- |
+| Evidence entries, the router's acquisition notes, the content-addressed text store, the `evidence` reducer | [provenance.py](../../tradingagents/dataflows/provenance.py), [router.py](../../tradingagents/dataflows/router.py), [evidence.py](../../tradingagents/dataflows/evidence.py) |
+| Recorded tool copies and the analysts' `evidence` output; an empty `evidence` in each new run's state | [setup.py](../../tradingagents/graph/setup.py), [state.py](../../tradingagents/agents/state.py), [propagation.py](../../tradingagents/graph/propagation.py) |
+| The Sentiment Analyst's three feeds, on both its paths | [sentiment_analyst.py](../../tradingagents/agents/analysts/sentiment_analyst.py) |
+| The claim check as data (`checked_claims`, `claim_check_data`), returned by the Portfolio Manager | [claim_check.py](../../tradingagents/agents/claim_check.py), [portfolio_manager.py](../../tradingagents/agents/managers/portfolio_manager.py) |
+| `evidence.json`, `claim_check.json`, the Sources appendix (Markdown and HTML), the run's own store passed by every writer | [reporting.py](../../tradingagents/reporting.py), [report_html.py](../../tradingagents/report_html.py), [trading_graph.py](../../tradingagents/graph/trading_graph.py), [jobs.py](../../cli/webui/jobs.py), [run.py](../../cli/run.py) |
+| The brief and the verified source texts | [brief.py](../../tradingagents/brief.py), [context.py](../../tradingagents/agents/context.py) (`resolved_identity`) |
+| `/api/report/brief`, `/api/report/source`, run status on report details | [server.py](../../cli/webui/server.py) |
+| The Brief view, section I's per-analyst buttons and the drawer | [app.js](../../cli/webui/static/app.js), [app.css](../../cli/webui/static/app.css) |
+
+Where the build differs from, or adds to, the proposal:
+
+- Tool results reach the analyst's node as the `ToolMessage` artifact of a
+  copied tool (`response_format="content_and_artifact"`); the model is offered
+  the same names, descriptions and schemas and receives the same text. A tool
+  call ToolNode refuses for invalid arguments reads no source and gets no entry;
+  any other tool error ends the run as before, and a partial report then lists
+  what the finished analysts read.
+- Each acquisition keeps the vendor's outcome, so a vendor chain shows every
+  vendor asked ("sec_edgar: unavailable; yfinance: unavailable"). An answer the
+  run's evidence session served again keeps the time it was really fetched and
+  its C04 `request_sha256`. A read that does not go through the router (the
+  market snapshot built from cached prices) says no vendor was recorded.
+- The report writers take the run's own store (`evidence_store`) rather than
+  the config current at save time: a graph saved under another config named the
+  wrong folder before this.
+- The Sources appendix links only web addresses, inside `<...>` and
+  percent-encoded, with brackets and bars in vendor titles escaped: a feed's
+  `javascript:` address had become a live link in a download. The page links
+  only web addresses too and shows anything else as text.
+- The Reports page strips the appendix by its exact opening, so an analyst's
+  own `## ` headings stay in section I.
+- Missing inputs name the check or source and its fix. The India-specific fix
+  in section 4's example ("the India database has no filings") is not shown:
+  the run records no signal that would say so reliably.
+- A historical run's identity carries today's name only ("today's name" in the
+  brief) and no exchange or classification, as the instrument context already
+  withholds them for past dates.
+
+### Offline evidence
+
+40 new tests, each seen failing on the code before its change:
+`test_c05_sources.py` (25: entries per tool call and feed, pipeline order,
+vendor, window, fetch time and request identity, stored texts and their hashes,
+shared reads stored once, gaps, links and unknown publication times, resume, the
+Jev path, unchanged tool schemas, coverage words, the claim check as data,
+`evidence.json` and `claim_check.json`, the appendix and its link safety, the
+section split, partial reports, the run's own store, states saved before C05),
+`test_c05_brief.py` (10) and `test_c05_webui.py` (5). Two existing tests changed
+with the contract: the Sentiment Analyst subgraph's pinned outputs gain its
+`evidence`, and a stand-in graph for `save_reports` gains the config every graph
+has.
+
+Planted bugs, one at a time against the C05 tests: 14 of 14 caught (tool
+results dropped, a reducer keeping one analyst, an unavailable answer read as
+available, stored texts not hash-checked, a reused answer re-stamped, the Jev
+path's news unrecorded, claim-check sections dropped, the writer ignoring the
+run's store, any link scheme in downloads, the appendix left in section V, a
+store outside the results folder, an unlisted text served, figures matched on
+digits alone, headlines oldest first).
+
+Walkthrough ([record](../benchmarks/c05-walkthrough.json)): headless Chrome
+driven by Playwright with the keyboard only, at 1440x900 in both themes and at
+375x812, on three synthetic reports from one offline graph run (complete with a
+throttled balance sheet and a hostile `javascript:` headline; partial; saved
+before C05). 31 of 31 checks pass with no console errors: the brief opens by
+default; statements in verdict order; links web-only and in a new tab without an
+opener; times local with the UTC instant on hover; Tab reaches a statement's
+sources, Enter opens the modal drawer with focus on its heading, focus stays in
+it, Escape closes it and focus returns; the figure trace shows the stating line;
+section I's buttons open each analyst's sources; partial and pre-C05 reports say
+so; at 375 px nothing scrolls sideways and the drawer is full screen. It found
+three faults, all fixed: disabling the "Show the text" button dropped keyboard
+focus, the general dialog rule shrank the drawer (339 px on a phone), and the
+coverage table hid its coverage and fetch-time columns.
+[Drawer at 1440 px](../benchmarks/c05-drawer-1440.png),
+[at 375 px](../benchmarks/c05-drawer-375.png). A planted removal of the drawer's
+own focus return went unnoticed in Chrome, which restores focus on close itself;
+the listener covers other browsers. A planted `javascript:` link was caught.
+
+Full offline gate on tree `19891d8`: 2,265 passed, 4 skipped, 1 deselected,
+0 failed; Ruff clean; scratch `HOME` left empty.
+
+### Limits
+
+- Fixture tested only. No live run, so no real vendor's texts, sizes or
+  timings; how often a figure trace finds a coincidental equal number in real
+  sources (a price row stating "109.50") is unmeasured. The drawer shows the line
+  so the reader judges it.
+- Texts are written for every graph run, backtests included, and nothing deletes
+  them when a report is deleted. Identical texts are stored once.
+- No user has used the brief (G4); its blocks are the design's, not observed needs.

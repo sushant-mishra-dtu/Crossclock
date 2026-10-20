@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from tradingagents.agents.jev import ask_each, jev_absence, jev_client
@@ -799,27 +799,48 @@ def render_claim_check(check: ClaimCheck, pm_rating: str | None) -> str:
     return "\n".join(lines)
 
 
-def check_claims(
-    decision: str, state: Mapping[str, Any], policy: ClaimCheckPolicy = DEFAULT_POLICY,
-) -> str:
-    """The decision with its claim check appended, or unchanged without Jev.
+def claim_check_data(check: ClaimCheck, policy: ClaimCheckPolicy = DEFAULT_POLICY) -> dict:
+    """The check as plain data, saved beside the report for its brief (docs/adr/0003)."""
+    def section(s: Section | None):
+        if s is None:
+            return None
+        return {"report": s.report, "heading": s.heading, "part": s.part, "label": s.label, "text": s.text}
 
-    Unchanged when the check is switched off, no analyst report was written,
-    Jev is unavailable, or any Jev request fails.
+    return {
+        "status": CHECK_RAN, "candidates": check.candidates, "review": check.review,
+        "reasons": list(check.reasons), "policy": asdict(policy),
+        "claims": [{
+            "claim": r.claim, "verdict": r.verdict, "checkable": round(r.checkable, 3),
+            "probability": round(r.probability, 3), "section": section(r.section),
+            "sources": {name: round(p, 3) for name, p in r.sources.items()},
+            "figures_unstated": list(r.figures),
+        } for r in check.results],
+    }
+
+
+def checked_claims(
+    decision: str, state: Mapping[str, Any], policy: ClaimCheckPolicy = DEFAULT_POLICY,
+) -> tuple[str, dict]:
+    """The decision with its claim check appended, and the check as data.
+
+    The decision is unchanged when the check is switched off, no analyst report
+    was written, Jev is unavailable, or any Jev request fails; the data then
+    holds only that status.
     """
     # Each outcome is recorded, so a report can say its decision is unchecked
     # rather than read like one whose claims were checked (docs/adr/0001).
+    def unchecked(status: str) -> tuple[str, dict]:
+        record_check("claim_check", status)
+        return decision, {"status": status, "claims": []}
+
     if not get_config().get("jev_claim_check", True):
-        record_check("claim_check", CHECK_DISABLED)
-        return decision
+        return unchecked(CHECK_DISABLED)
     reports = analyst_reports(state)
     if not reports or not decision.strip():
-        record_check("claim_check", CHECK_SKIPPED)
-        return decision
+        return unchecked(CHECK_SKIPPED)
     client = jev_client()
     if client is None:
-        record_check("claim_check", jev_absence())
-        return decision
+        return unchecked(jev_absence())
     try:
         with client:
             check = run_check(client, decision, reports, instrument_from_state(state), policy)
@@ -827,12 +848,19 @@ def check_claims(
         logger.warning(
             "Portfolio Manager: claim check failed (%s); keeping the decision unchecked", exc,
         )
-        record_check("claim_check", CHECK_FAILED)
-        return decision
+        return unchecked(CHECK_FAILED)
     record_check("claim_check", CHECK_RAN)
     pm_rating = extract_rating(decision)
     logger.info(
         "Portfolio Manager: claim check read %d claims, %d checkable, review=%s",
         len(check.results), len(check.checkable), check.review,
     )
-    return f"{decision.rstrip()}\n\n{render_claim_check(check, pm_rating)}"
+    checked = f"{decision.rstrip()}\n\n{render_claim_check(check, pm_rating)}"
+    return checked, claim_check_data(check, policy)
+
+
+def check_claims(
+    decision: str, state: Mapping[str, Any], policy: ClaimCheckPolicy = DEFAULT_POLICY,
+) -> str:
+    """The decision with its claim check appended, or unchanged without Jev (see ``checked_claims``)."""
+    return checked_claims(decision, state, policy)[0]

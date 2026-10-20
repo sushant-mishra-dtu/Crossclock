@@ -785,6 +785,17 @@ def reports_list() -> list[dict]:
     return out
 
 
+def _saved_completion(report) -> dict | None:
+    """The run-status record saved beside a report tree (docs/adr/0001), worded for the page."""
+    if report.kind not in ("report", "partial"):
+        return None
+    try:
+        completion = json.loads((report.path.parent / "run_status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _completion_view(completion) if isinstance(completion, dict) else None
+
+
 def report_detail(report_id: str) -> dict:
     report = _find_report(report_id)
     sections = load_report_sections(report)
@@ -792,7 +803,34 @@ def report_detail(report_id: str) -> dict:
             "modified": report.modified.strftime("%Y-%m-%d %H:%M"), "kind": report.kind,
             "path": str(report.path), "rating": None if report.kind == "partial" else report_rating(sections),
             "sections": [{"title": t, "body": b} for t, b in sections],
-            "hasJudgments": report.judgments_path is not None}
+            "hasJudgments": report.judgments_path is not None,
+            # A state log has no saved run status, sources or claim check, so no brief.
+            "hasBrief": report.kind in ("report", "partial"),
+            "completion": _saved_completion(report)}
+
+
+def report_brief(report_id: str) -> dict:
+    """The brief a saved report opens with (docs/adr/0003)."""
+    from tradingagents.brief import report_brief as build
+
+    report = _find_report(report_id)
+    if report.kind not in ("report", "partial"):
+        raise ApiError("A state log has no brief; open its sections instead.", HTTPStatus.NOT_FOUND)
+    return build(report.path.parent, report.kind, results_root=DEFAULT_CONFIG["results_dir"])
+
+
+def report_source(report_id: str, digest: str) -> dict:
+    """A source text the report lists, verified against its hash; never any other file."""
+    from tradingagents.brief import source_text
+
+    report = _find_report(report_id)
+    text = None
+    if report.kind in ("report", "partial"):
+        text = source_text(report.path.parent, digest, results_root=DEFAULT_CONFIG["results_dir"])
+    if text is None:
+        raise ApiError("This source text is not available: the report does not list it, "
+                       "or it was not kept, or it no longer matches its hash.", HTTPStatus.NOT_FOUND)
+    return {"sha": digest, "text": text}
 
 
 def _log_path(run: str | None) -> Path:
@@ -978,6 +1016,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(reports_list())
             case ["report"]:
                 return self._send_json(report_detail(q.get("id", "")))
+            case ["report", "brief"]:
+                return self._send_json(report_brief(q.get("id", "")))
+            case ["report", "source"]:
+                return self._send_json(report_source(q.get("id", ""), q.get("sha", "")))
             case ["report", "judgments"]:
                 judgments = load_judgments(_find_report(q.get("id", "")))
                 if judgments is None:

@@ -16,7 +16,7 @@ contradicted or largely unsupported thesis sends the decision, and the run's
 
 from __future__ import annotations
 
-from tradingagents.agents.claim_check import check_claims
+from tradingagents.agents.claim_check import checked_claims
 from tradingagents.agents.context import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -93,7 +93,7 @@ Write these sections, in this order, starting with the rating on its own line:
             final_rating = parse_rating(final_trade_decision)
         # Before the state is built, so the rating and the decision text agree: a
         # claim check that ends in REVIEW replaces the Portfolio Manager's rating.
-        checked = check_claims(final_trade_decision, state)
+        checked, claim_check = checked_claims(final_trade_decision, state)
         if checked != final_trade_decision and extract_rating(checked) is None:
             final_rating = RATING_REVIEW
         final_trade_decision = checked
@@ -115,6 +115,7 @@ Write these sections, in this order, starting with the rating on its own line:
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
             "final_rating": final_rating,
+            "claim_check": claim_check,
         }
 
     return portfolio_manager_node

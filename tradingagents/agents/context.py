@@ -2,6 +2,7 @@
 
 import functools
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -102,6 +103,27 @@ def _identity(ticker: str) -> dict:
         if value:
             identity[target_key] = value
     return identity
+
+
+def resolved_identity(context: str) -> dict[str, str]:
+    """The identity ``build_instrument_context`` wrote, read back: name, classification, exchange.
+
+    A historical run's name is today's name; ``name_is_current`` says so.
+    """
+    m = re.search(r"Resolved identity: (.*?)\. Do not substitute", context or "")
+    found: dict[str, str] = {}
+    for item in (m.group(1).split("; ") if m else ()):
+        key, _, value = item.partition(": ")
+        if key in ("Company", "Name") and value:
+            name, current, _ = value.partition(" (its current name")
+            found["name"] = name
+            if current:
+                found["name_is_current"] = "true"
+        elif key in ("Business classification", "Sector", "Industry") and value:
+            found["classification"] = value
+        elif key == "Exchange" and value:
+            found["exchange"] = value
+    return found
 
 
 def build_instrument_context(

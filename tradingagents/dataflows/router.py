@@ -7,8 +7,9 @@ from tradingagents.dataflows.errors import (
     VendorNotConfiguredError,
     VendorUnavailableError,
 )
-from tradingagents.dataflows.evidence import current_evidence
+from tradingagents.dataflows.evidence import current_evidence, request_hash
 from tradingagents.dataflows.feed import Feed
+from tradingagents.dataflows.provenance import note_acquisition
 from tradingagents.dataflows.symbols import normalize_symbol
 from tradingagents.dataflows.vendors.alpha_vantage import (
     get_balance_sheet as get_alpha_vantage_balance_sheet,
@@ -227,11 +228,23 @@ _SHARED_METHODS = frozenset({
 })
 
 
+def _bound_request(impl_func, args, kwargs) -> dict:
+    """The call's arguments by name, defaults applied, as the vendor's signature reads them."""
+    try:
+        bound = signature(impl_func).bind(*args, **kwargs)
+    except (TypeError, ValueError):
+        return {"args": args, "kwargs": kwargs}
+    bound.apply_defaults()
+    return dict(bound.arguments)
+
+
 def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
     """Reuse eligible exact source views only inside the current research run."""
     session = current_evidence()
     if session is None or method not in _SHARED_METHODS:
-        return _fetch_source(impl_func, source, method, category, args, kwargs)
+        value = _fetch_source(impl_func, source, method, category, args, kwargs)
+        note_acquisition(source, method, _bound_request(impl_func, args, kwargs), "ok", value)
+        return value
 
     # News and Sentiment consume text and items from the same acquisition. Keep
     # the unscoped public vendor path unchanged (Alpha Vantage can return a dict).
@@ -241,14 +254,7 @@ def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
         impl_func = feed_impl[0] if isinstance(feed_impl, list) else feed_impl
         operation = "get_news_feed"
 
-    try:
-        call_signature = signature(impl_func)
-    except (TypeError, ValueError):
-        request = {"args": args, "kwargs": kwargs}
-    else:
-        bound = call_signature.bind(*args, **kwargs)
-        bound.apply_defaults()
-        request = dict(bound.arguments)
+    request = _bound_request(impl_func, args, kwargs)
     instrument = request.get("symbol", request.get("ticker"))
     if instrument is None and args:
         instrument = args[0]
@@ -266,6 +272,10 @@ def _retrieve_from_source(impl_func, source, method, category, args, kwargs):
         lambda: _fetch_source(impl_func, source, operation, category, args, kwargs),
         category=category,
     )
+    # A reused answer keeps the time it was really fetched (docs/adr/0003).
+    record = session.record_for(source, operation, request, category=category)
+    note_acquisition(source, operation, request, "ok", value, record.fetched_at if record else None,
+                     request_hash(request))
     return value.text if method == "get_news" and isinstance(value, Feed) else value
 
 
@@ -329,20 +339,24 @@ def route_to_vendor(method: str, *args, **kwargs):
         try:
             return _retrieve_from_source(impl_func, vendor, method, category, args, kwargs)
         except VendorUnavailableError as e:
+            note_acquisition(vendor, method, _bound_request(impl_func, args, kwargs), "unavailable")
             logger.warning("Vendor %r unavailable for %s: %s; trying next vendor.", vendor, method, e)
             # Kept so an all-unavailable chain can say the vendor was the
             # problem, rather than reporting nothing about the symbol.
             last_unavailable = e
             continue
         except VendorNotConfiguredError as e:
+            note_acquisition(vendor, method, _bound_request(impl_func, args, kwargs), "not_configured")
             logger.warning("Vendor %r not configured for %s; trying next vendor.", vendor, method)
             if first_error is None:
                 first_error = e  # Surface it if no other vendor can serve the call.
             continue
         except NoMarketDataError as e:
+            note_acquisition(vendor, method, _bound_request(impl_func, args, kwargs), "no_data")
             last_no_data = e  # No data here; another configured vendor may have it
             continue
         except Exception as e:
+            note_acquisition(vendor, method, _bound_request(impl_func, args, kwargs), "error")
             # Don't let one vendor's failure crash the call when another can
             # serve it, but never swallow silently: a broken primary must be
             # visible in the logs (#989), not hidden behind a fallback's verdict.

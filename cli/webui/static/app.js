@@ -2679,7 +2679,220 @@ PAGES['/screens'] = {
 
 /* Page: Reports ------------------------------------------------------------- */
 
-const reports = { tab: 'saved', list: null, id: null, detail: null, section: null, log: null, ticker: 'all', open: null };
+const reports = { tab: 'saved', list: null, id: null, detail: null, section: null, log: null, ticker: 'all', open: null, brief: null };
+
+/* The brief and its source drawer (docs/adr/0003) ----------------------------- */
+
+const BRIEF = 'Brief';
+const STATEMENT_VERDICTS = {
+  contradicted: ['Contradicted', 'pill-neg'], unsupported: ['Not found', 'pill-plain'],
+  unverified: ['Unverified', 'pill-plain'], supported: ['Supported', 'pill-pos'], not_checkable: ['Not checked', 'pill-plain'],
+};
+const COVERAGE_WORDS = {
+  available: ['available', 'pill-pos'], empty: ['empty', 'pill-plain'], unavailable: ['unavailable', 'pill-neg'],
+  no_data: ['no data', 'pill-plain'], withheld: ['withheld', 'pill-plain'],
+};
+const RUN_STATES = { complete: 'Complete', complete_with_gaps: 'Complete with gaps', partial: 'Partial research', none: 'Nothing finished' };
+
+/** Only web links open from a source; anything else (javascript:, data:) is shown as text. */
+const webUrl = (u) => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
+
+/** A time in the reader's local zone, with the exact UTC instant on hover; unknown says so. */
+function whenHtml(iso, unknown = 'unknown', short = false) {
+  if (!iso) return `<span class="faint">${esc(unknown)}</span>`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return esc(iso);
+  const local = short ? d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : d.toLocaleString();
+  return `<time datetime="${esc(iso)}" title="${esc(d.toISOString())} (UTC)">${esc(local)}</time>`;
+}
+
+function wordPill([label, tone]) {
+  return `<span class="pill sm ${tone}">${esc(label)}</span>`;
+}
+
+/** A button that opens the source drawer on `ids`; `figure` and `line` say which line to show. */
+function sourceButton(ids, label, { figure = '', line = '', mono = false } = {}) {
+  return `<button type="button" class="chip sm b${mono ? ' mono' : ''}" data-src="${esc(ids.join(','))}"${figure ? ` data-src-figure="${esc(figure)}"` : ''}${line ? ` data-src-line="${esc(line)}"` : ''}>${esc(label)}</button>`;
+}
+
+function briefFacts(rows) {
+  return `<dl class="bf-facts">${rows.filter(([, v]) => v).map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+}
+
+function briefView(b) {
+  const h = b.header;
+  const run = b.run;
+  const parts = [];
+  if (!b.recorded) {
+    parts.push(`<div class="alert alert-info" role="note">${I.alert}<div>Sources were not recorded for this report: it was saved before Crossclock kept what each analyst read. The brief shows what the report itself holds.</div></div>`);
+  }
+  if (run.state === 'partial' || run.state === 'none') {
+    parts.push(`<div class="alert alert-neg" role="note">${I.alert}<div><b>${esc(RUN_STATES[run.state])}.</b> ${esc(run.summary || '')} No rating; this is not a decision to act on.</div></div>`);
+  } else if (run.state === 'complete_with_gaps') {
+    parts.push(`<div class="alert alert-warn" role="note">${I.alert}<div><b>Complete with gaps.</b> ${run.gaps.map((g) => esc(g)).join('; ')}.</div></div>`);
+  }
+
+  const rating = b.rating.partial ? 'none: partial research'
+    : b.rating.final ? (b.rating.final !== b.rating.portfolioManager && b.rating.portfolioManager
+      ? `${esc(b.rating.final)} <span class="faint">(the Portfolio Manager said ${esc(b.rating.portfolioManager)}; changed by the claim check)</span>`
+      : esc(b.rating.final)) : '<span class="faint">none recorded</span>';
+  const company = h.company ? esc(h.company) + (h.nameIsCurrent ? ' <span class="faint">(today\'s name)</span>' : '') : '';
+  parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-about-h"><h3 id="bf-about-h" class="bf-h">About this report</h3>
+    ${briefFacts([
+      ['Instrument', `<span class="mono">${esc(h.ticker || '')}</span>${company ? ' · ' + company : ''}`],
+      ['Exchange', esc(h.exchange || '')], ['Classification', esc(h.classification || '')],
+      ['Data as of', esc(h.analysisDate || '')],
+      ['Run', esc(RUN_STATES[run.state] || 'status not recorded')],
+      ['Rating', rating],
+      ['Saved', h.generated ? `${esc(h.generated)} <span class="faint">(this computer's time)</span>` : ''],
+      ['Models', esc(h.models || '')],
+    ])}</section>`);
+
+  const s = b.summary;
+  parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-sum-h"><h3 id="bf-sum-h" class="bf-h">Summary</h3>
+    ${s.executiveSummary ? `<p class="bf-text">${esc(s.executiveSummary)}</p>` : '<p class="hint">The decision has no labelled executive summary.</p>'}
+    ${briefFacts([
+      ['Price target', s.priceTarget ? `${esc(s.priceTarget)} <span class="faint">(${s.currency ? esc(s.currency) : 'currency not recorded'})</span>` : '<span class="faint">not provided</span>'],
+      ['Time horizon', s.timeHorizon ? esc(s.timeHorizon) : '<span class="faint">not provided</span>'],
+    ])}
+    <p class="hint">Not produced by this run: ${b.notProduced.map(esc).join(', ')}.</p></section>`);
+
+  const st = b.statements;
+  const claims = st.claims.map((c, i) => {
+    const figures = c.figures.map((f) => `<li>${esc(f.figure)}: ${f.found.length
+      ? 'stated in ' + f.found.map((x) => sourceButton([x.id], x.id, { figure: f.figure, line: x.line, mono: true })).join(' ') + (f.more ? ` <span class="faint">and ${f.more} more</span>` : '')
+      : '<span class="faint">in no source this run fetched</span>'}</li>`).join('');
+    return `<li class="bf-claim" aria-labelledby="bf-c${i}">
+      <div class="row bf-claim-head">${wordPill(STATEMENT_VERDICTS[c.verdict] || [c.verdict, 'pill-plain'])}<p id="bf-c${i}" class="bf-text">${esc(c.claim)}</p></div>
+      <p class="hint">${esc(c.verdictText)}${c.section ? ` · ${esc(c.section.label)}` : ''}</p>
+      ${c.sources.length ? `<div>${sourceButton(c.sources, `Sources behind that section (${c.sources.length})`)}</div>` : ''}
+      ${figures ? `<ul class="bf-figures" aria-label="Figures in this statement">${figures}</ul>` : ''}</li>`;
+  }).join('');
+  parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-st-h"><h3 id="bf-st-h" class="bf-h">Statements in the decision</h3>
+    <p class="hint">${esc(st.text)}${claims ? ' "Sources behind that section" lists what that analyst read; it is not a check that a source supports the statement.' : ''}</p>
+    ${claims ? `<ol class="bf-list">${claims}</ol>` : ''}</section>`);
+
+  const hl = b.headlines;
+  if (hl.items.length) {
+    parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-hl-h"><h3 id="bf-hl-h" class="bf-h">Headlines the analysts read</h3>
+      <p class="hint">${hl.orderedBy === 'material' ? "Ordered by Jev's material-event judgment, then newest first." : 'Newest first; undated last.'} These are headlines read, not a list of material events.</p>
+      <ul class="bf-list">${hl.items.map((it) => {
+        const url = webUrl(it.url);
+        const title = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(it.title || url)}</a>` : esc(it.title || '');
+        return `<li class="bf-headline"><span class="bf-text">${title}</span>
+          <span class="hint">${esc(it.publisher || 'publisher unknown')} · ${whenHtml(it.publishedAt, 'publication time unknown')}${it.material != null ? ` · material ${esc(it.material.toFixed(2))}` : ''} · ${sourceButton([it.entry], it.entry, { mono: true })}</span></li>`;
+      }).join('')}</ul></section>`);
+  }
+
+  if (b.coverage.length) {
+    // One header row per analyst, and coverage beside the ID, so a gap shows without scrolling sideways.
+    // One row group per analyst, its name heading the group.
+    const rows = b.coverage.map((g) => `<tbody><tr class="bf-group"><th scope="rowgroup" colspan="6">${esc(g.analyst)}</th></tr>`
+      + g.entries.map((e) => `<tr><td>${sourceButton([e.id], e.id, { mono: true })}</td>
+      <td>${wordPill(COVERAGE_WORDS[e.coverage] || [e.coverage, 'pill-plain'])}</td><td class="mono">${esc(e.tool).replace(/_/g, '_<wbr>')}</td>
+      <td>${esc(e.sources.join(', ') || 'not recorded')}</td>
+      <td class="nowrap">${esc(e.window || '')}${e.asOf ? `${e.window ? '<br>' : ''}as of ${esc(e.asOf)}` : ''}</td>
+      <td class="nowrap">${whenHtml(e.fetchedAt, 'not recorded', true)}</td></tr>`).join('') + '</tbody>').join('');
+    parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-cov-h"><h3 id="bf-cov-h" class="bf-h">Data coverage</h3>
+      <div class="table-scroll"><table class="tbl compact"><caption class="sr">What each analyst read, with its coverage, tool, vendor, window and fetch time</caption>
+      <thead><tr><th scope="col">Source</th><th scope="col">Coverage</th><th scope="col">Tool</th><th scope="col">Vendor</th><th scope="col">Window</th><th scope="col">Fetched</th></tr></thead>
+      ${rows}</table></div></section>`);
+  }
+
+  parts.push(`<section class="stack" style="gap: 10px;" aria-labelledby="bf-miss-h"><h3 id="bf-miss-h" class="bf-h">Missing inputs</h3>
+    ${b.missing.length ? `<ul class="bf-list">${b.missing.map((m) => `<li><span class="bf-text">${esc(m.what)}</span>${m.entry ? ' ' + sourceButton([m.entry], m.entry, { mono: true }) : ''}${m.fix ? `<p class="hint">${esc(m.fix)}</p>` : ''}</li>`).join('')}</ul>`
+      : `<p class="hint">${b.recorded ? 'None: every source answered and every check ran.' : 'Not recorded for this report.'}</p>`}</section>`);
+  return `<div class="brief stack" style="gap: 26px;">${parts.join('')}</div>`;
+}
+
+/** The drawer: each entry's provenance, links, the line a figure was traced to, and its text on request. */
+function sourceEntry(e, byId, figure, line) {
+  const readers = [e, ...e.sharedWith.map((id) => byId[id]).filter(Boolean)];
+  const asked = (e.acquisitions || []).map((a) => `${esc(a.source)}: ${a.outcome === 'ok' ? 'answered' : esc(a.outcome.replace('_', ' '))}`).join('; ');
+  const first = (e.acquisitions || []).find((a) => a.outcome === 'ok') || {};
+  const window = first.window_start && first.window_end ? `${first.window_start} to ${first.window_end}` : (first.window_start || first.window_end || '');
+  const args = Object.entries(e.arguments || {}).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
+  const items = (e.acquisitions || []).filter((a) => a.outcome === 'ok').flatMap((a) => a.items || []);
+  return `<article class="src-entry stack" style="gap: 12px;" aria-labelledby="src-${esc(e.id)}-h">
+    <h3 id="src-${esc(e.id)}-h" class="bf-h"><span class="mono">${esc(e.id)}</span> · <span class="mono">${esc(e.tool)}</span></h3>
+    ${line ? `<div class="well-box src-line"><p class="hint">The line that states ${esc(figure)}:</p><p class="mono">${esc(line)}</p><p class="hint">Equal at the statement's precision; read the line to judge whether it is the same fact.</p></div>` : ''}
+    ${briefFacts([
+      ['Read by', readers.map((r) => `${esc(r.analyst)}${r === e ? '' : ` (${esc(r.id)})`}`).join(', ')],
+      ['Arguments', args ? `<span class="mono">${esc(args)}</span>` : ''],
+      ['Vendors asked', asked || '<span class="faint">not through the router; no vendor recorded</span>'],
+      ['Window', esc(window)], ['As of', esc(first.as_of || '')],
+      ['Fetched', whenHtml(first.fetched_at, 'not recorded')],
+      ['Coverage', wordPill(COVERAGE_WORDS[e.coverage] || [e.coverage, 'pill-plain'])],
+      ['Content', `<span class="mono" title="${esc(e.content_sha256)}">sha256 ${esc(e.content_sha256.slice(0, 12))}…</span> · ${esc(String(e.chars))} characters`],
+    ])}
+    ${items.length ? `<div class="stack" style="gap: 6px;"><p class="hint">Articles in this source:</p><ul class="bf-list">${items.map((it) => {
+      const url = webUrl(it.url);
+      return `<li>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(it.title || url)}</a>` : esc(it.title || 'untitled')} <span class="hint">${esc(it.publisher || 'publisher unknown')} · ${whenHtml(it.published_at, 'publication time unknown')}</span></li>`;
+    }).join('')}</ul></div>` : ''}
+    ${e.textAvailable
+      ? `<div><button type="button" class="btn b" data-src-text="${esc(e.content_sha256)}" aria-expanded="false">Show the text the analyst read</button><div class="src-text" hidden></div></div>`
+      : '<p class="hint">The text was not kept, or it no longer matches its hash, so it is not shown.</p>'}
+  </article>`;
+}
+
+function sourceDrawer() {
+  let dlg = $('#src-drawer');
+  if (dlg) return dlg;
+  dlg = document.createElement('dialog');
+  dlg.id = 'src-drawer';
+  dlg.className = 'sc-dialog src-drawer';
+  dlg.setAttribute('aria-labelledby', 'src-drawer-h');
+  document.body.appendChild(dlg);
+  // Browsers that follow the current dialog spec restore focus on close themselves; this covers the rest.
+  dlg.addEventListener('close', () => {
+    const back = dlg.__opener;
+    dlg.__opener = null;
+    if (back && back.isConnected) back.focus();
+  });
+  dlg.addEventListener('click', async (e) => {
+    if (e.target === dlg || e.target.closest('[data-src-close]')) { dlg.close(); return; }
+    const show = e.target.closest('[data-src-text]');
+    if (!show) return;
+    const box = show.nextElementSibling;
+    if (show.getAttribute('aria-expanded') === 'true') {
+      box.hidden = true; show.setAttribute('aria-expanded', 'false'); show.textContent = 'Show the text the analyst read';
+      return;
+    }
+    // Not `disabled`: disabling the focused button would drop keyboard focus to the page.
+    if (show.__busy) return;
+    show.__busy = true;
+    show.setAttribute('aria-busy', 'true');
+    try {
+      if (!box.__loaded) {
+        const r = await api(`/report/source?id=${encodeURIComponent(dlg.__report)}&sha=${encodeURIComponent(show.dataset.srcText)}`);
+        box.innerHTML = `<pre class="src-pre" tabindex="0" aria-label="Source text">${esc(r.text)}</pre>`;
+        box.__loaded = true;
+      }
+      box.hidden = false; show.setAttribute('aria-expanded', 'true'); show.textContent = 'Hide the text';
+    } catch (err) {
+      box.innerHTML = `<div class="alert alert-neg">${I.alert}<div>${esc(err.message)}</div></div>`;
+      box.hidden = false;
+    } finally { show.__busy = false; show.removeAttribute('aria-busy'); }
+  });
+  return dlg;
+}
+
+/** Open the drawer on entries `ids` of the report's brief; focus returns to `opener` on close. */
+function openSources(reportId, b, ids, opener, figure = '', line = '') {
+  const byId = Object.fromEntries(b.entries.map((e) => [e.id, e]));
+  const shown = ids.map((id) => byId[id]).filter(Boolean);
+  const dlg = sourceDrawer();
+  dlg.__report = reportId;
+  dlg.__opener = opener;
+  const title = shown.length === 1 ? `Source ${shown[0].id}` : `${shown.length} sources`;
+  dlg.innerHTML = `<div class="stack" style="gap: 18px;">
+    <div class="row" style="gap: 12px; align-items: center;"><h2 id="src-drawer-h" class="section-h grow" style="font-size: 20px;" tabindex="-1">${esc(title)}</h2>
+      <button type="button" class="btn b" data-src-close>Close</button></div>
+    <p class="hint">What the analysts read, as the run recorded it. Whether a source supports a statement is not checked here.</p>
+    ${shown.map((e) => sourceEntry(e, byId, figure, line)).join('')}</div>`;
+  if (!dlg.open) dlg.showModal();
+  $('#src-drawer-h', dlg).focus();
+}
 
 PAGES['/reports'] = {
   nav: 'reports', title: 'Reports',
@@ -2689,6 +2902,7 @@ PAGES['/reports'] = {
     reports.list = null;
     reports.log = null;
     reports.detail = null;
+    reports.brief = null;
     main.innerHTML = `<div class="stack rise" style="gap: 22px;">
       ${pageHead('Reports', '')}
       <div class="seg fit" role="tablist" aria-label="Reports view" id="rep-tabs"></div>
@@ -2720,8 +2934,29 @@ PAGES['/reports'] = {
       reports.section = null;
     }
     const d = reports.detail;
-    if (!d.sections.some((s) => s.title === reports.section)) reports.section = d.sections.length ? d.sections[d.sections.length - 1].title : null;
+    // A report with a brief opens on it (docs/adr/0003); a state log on its last section.
+    const titles = [...(d.hasBrief ? [BRIEF] : []), ...d.sections.map((s) => s.title)];
+    if (!titles.includes(reports.section)) reports.section = d.hasBrief ? BRIEF : titles[titles.length - 1] || null;
     const cur = d.sections.find((s) => s.title === reports.section);
+    let view = '';
+    if (reports.section === BRIEF) {
+      if (!reports.brief || reports.brief.id !== d.id) reports.brief = { id: d.id, data: await api('/report/brief?id=' + encodeURIComponent(d.id)) };
+      view = `<div class="well-box report-body">${briefView(reports.brief.data)}</div>`;
+    } else if (cur) {
+      // Section I names what each analyst read; each button opens the drawer (docs/adr/0003).
+      let read = '';
+      if (d.hasBrief && cur.title.startsWith('I.')) {
+        if (!reports.brief || reports.brief.id !== d.id) reports.brief = { id: d.id, data: await api('/report/brief?id=' + encodeURIComponent(d.id)) };
+        const groups = reports.brief.data.coverage;
+        if (groups.length) {
+          read = `<div class="row" style="gap: 8px; flex-wrap: wrap; align-items: center;" role="group" aria-label="What each analyst read"><span class="hint">What each analyst read:</span>${groups.map((g) => sourceButton(g.entries.map((e) => e.id), `${g.analyst} sources (${g.entries.length})`)).join('')}</div>`;
+        }
+      }
+      view = `<div class="well-box report-body"><h3 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em;">${esc(cur.title)}</h3>${read}${md(cur.body)}</div>`;
+    }
+    const c = d.completion;
+    const runLine = !c ? '' : c.state === 'complete' ? 'Run complete'
+      : c.state === 'complete_with_gaps' ? `Complete with gaps: ${c.gaps.join('; ')}` : (c.summary || RUN_STATES[c.state] || '');
     const cards = reports.list.map((r) => `<li><button type="button" class="report-card b" data-report="${esc(r.id)}" aria-pressed="${attr(r.id === reports.id)}">
       <span class="stack" style="gap: 2px; align-items: flex-start; min-width: 0;"><span class="mono" style="font-size: 15px; font-weight: 500;">${esc(r.ticker)}</span><span class="faint" style="font-size: 13px;">${esc(r.date || r.modified)}${r.kind === 'state' ? ' · state log' : r.kind === 'partial' ? ' · partial, no rating' : ''}</span></span>
       ${r.rating ? ratingPill(r.rating) : ''}</button></li>`).join('');
@@ -2733,14 +2968,15 @@ PAGES['/reports'] = {
           <div class="grow stack" style="gap: 4px;">
             <h2 id="rep-h" style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.03em;"><span class="mono" style="font-weight: 500; letter-spacing: 0;">${esc(d.ticker)}</span> · ${esc(d.date || d.modified)}</h2>
             <span class="muted" style="font-size: 14px;">${d.kind === 'partial' ? 'Partial report: the run stopped before it finished; no rating, not a decision' : "Portfolio manager's call"}${d.date ? ` · saved ${esc(d.modified)}` : ''}</span>
+            ${runLine ? `<span class="hint">${esc(runLine)}</span>` : ''}
           </div>
           <div class="row" style="gap: 8px; flex-wrap: wrap;">
             ${d.hasJudgments ? `<a class="btn b" href="/sentiment?report=${encodeURIComponent(d.id)}" data-link>Item judgments${I.arrow}</a>` : ''}
             <a class="btn b" href="/api/report/download?id=${encodeURIComponent(d.id)}" download>${I.download}Download ${d.kind === 'state' ? 'JSON' : 'Markdown'}</a>
           </div>
         </div>
-        ${d.sections.length ? `<div class="chips" role="group" aria-label="Report section">${d.sections.map((s) => `<button type="button" class="chip sm b" data-rsection="${esc(s.title)}" aria-pressed="${attr(s.title === reports.section)}">${esc(s.title)}</button>`).join('')}</div>
-        <div class="well-box report-body"><h3 style="margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.02em;">${esc(cur.title)}</h3>${md(cur.body)}</div>` : '<p class="empty">This report is empty.</p>'}
+        ${titles.length ? `<div class="chips" role="group" aria-label="Report section">${titles.map((t) => `<button type="button" class="chip sm b" data-rsection="${esc(t)}" aria-pressed="${attr(t === reports.section)}">${esc(t)}</button>`).join('')}</div>
+        ${view}` : '<p class="empty">This report is empty.</p>'}
         <p class="hint mono" style="font-size: 12px; overflow-wrap: anywhere;">${esc(d.path)}</p>
       </article></div>`;
   },
@@ -2756,7 +2992,20 @@ PAGES['/reports'] = {
     const r = e.target.closest('[data-report]');
     if (r) { reports.id = r.dataset.report; history.replaceState(null, '', '/reports?id=' + encodeURIComponent(reports.id)); this.render(); return; }
     const s = e.target.closest('[data-rsection]');
-    if (s) { reports.section = s.dataset.rsection; this.render(); return; }
+    if (s) {
+      reports.section = s.dataset.rsection;
+      await this.render();
+      // The chips are drawn again; keep the keyboard where it was.
+      const again = [...document.querySelectorAll('[data-rsection]')].find((b) => b.dataset.rsection === reports.section);
+      if (again) again.focus();
+      return;
+    }
+    const src = e.target.closest('[data-src]');
+    if (src && reports.brief) {
+      openSources(reports.brief.id, reports.brief.data, src.dataset.src.split(','), src,
+        src.dataset.srcFigure || '', src.dataset.srcLine || '');
+      return;
+    }
     if (handleLogClick(e, reports)) this.render();
   },
 };
