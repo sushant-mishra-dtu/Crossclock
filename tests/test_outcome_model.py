@@ -306,10 +306,15 @@ def test_a_model_of_outcomes_drawn_with_its_probability_lies_near_the_diagonal()
     assert ev.holdout_rows == 250
     assert sum(n for _, _, n, _, _ in ev.reliability) == 250
     assert len(ev.reliability) >= 4
+    # Loose bounds: each bin's share within 3 standard errors of its mean P, plus 0.05
+    # for the L2 penalty's pull towards 0.5, and a count-weighted mean gap under 0.12.
+    # Over seeds 0-199 the worst bin was 2.4 standard errors out and the worst mean gap 0.108.
+    gap = 0.0
     for lo, hi, n, mean_p, beat in ev.reliability:
         assert lo <= mean_p <= hi
-        if n >= 20:  # about 0.1 standard error at most; a loose tolerance
-            assert abs(beat - mean_p) < 0.15, (lo, hi, n, mean_p, beat)
+        assert abs(beat - mean_p) < 0.05 + 3 * np.sqrt(mean_p * (1 - mean_p) / n), (lo, n, beat)
+        gap += n * abs(beat - mean_p) / 250
+    assert gap < 0.12
 
 
 @pytest.mark.unit
