@@ -292,6 +292,8 @@ comparable runs. No speed, cost or supported-claim improvement is claimed here.
    to design and implement targeted retrieval plus an explicit Deep budget;
    do not substitute the existing five-round setting for that work.
 
+**Owner answer, 20 October 2026:** option A for all three questions (scope, 60 s budget, Deep shown unavailable). Implementation not started.
+
 ## Integration note
 
 On 20 October, GitHub marks PRs #3-#6 merged, but `origin/main` is `499fac9`
