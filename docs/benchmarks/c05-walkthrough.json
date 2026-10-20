@@ -1,0 +1,176 @@
+{
+  "task": "C05 brief and source drawer (docs/adr/0003-research-brief-and-source-drawer.md)",
+  "date": "2026-10-20",
+  "evidence_class": "fixture tested (synthetic reports from one offline graph run; no provider or vendor called)",
+  "browser": "Google Chrome (headless) driven by Playwright; keyboard only after each page load",
+  "viewports": [
+    "1440x900 dark",
+    "1440x900 light",
+    "375x812 light (mobile)"
+  ],
+  "reports": {
+    "complete": "complete run, Jev off; synthetic claim check recorded as ran; balance sheet throttled",
+    "partial": "stopped by the user while the Trader ran",
+    "before_c05": "the same run saved without evidence.json or claim_check.json"
+  },
+  "results": [
+    {
+      "name": "dark: a report with a brief opens on it",
+      "ok": true,
+      "detail": "Brief"
+    },
+    {
+      "name": "light: a report with a brief opens on it",
+      "ok": true,
+      "detail": "Brief"
+    },
+    {
+      "name": "the run status shows under the report title",
+      "ok": true,
+      "detail": "Complete with gaps: Memory log failed to run"
+    },
+    {
+      "name": "statements are ordered contradicted, not found, unverified, supported, not checked",
+      "ok": true,
+      "detail": "Contradicted,Not found,Unverified,Supported,Not checked"
+    },
+    {
+      "name": "headline links are web links opening in a new tab without an opener",
+      "ok": true,
+      "detail": "[[\"https://example.com/nvda-beat\",\"_blank\",\"noopener noreferrer\"],[\"https://example.com/export-rules\",\"_blank\",\"noopener noreferrer\"],[\"https://example.com/gpu-cycle\",\"_blank\",\"noopener noreferrer\"]]"
+    },
+    {
+      "name": "a javascript: headline is shown as text, never as a link",
+      "ok": true,
+      "detail": "{\"scriptLinks\":[],\"shownAsText\":true}"
+    },
+    {
+      "name": "publication times give the UTC instant on hover",
+      "ok": true,
+      "detail": "2026-01-08T21:05:00.000Z (UTC),2026-01-06T13:30:00.000Z (UTC),2026-01-03T08:00:00.000Z (UTC)"
+    },
+    {
+      "name": "an undated headline comes last and says its time is unknown",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "the coverage table marks the throttled balance sheet unavailable in words",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tab reaches a statement's \"Sources behind that section\" button",
+      "ok": true,
+      "detail": "27 presses"
+    },
+    {
+      "name": "Enter opens the drawer and moves focus to its heading",
+      "ok": true,
+      "detail": "{\"tag\":\"H2\",\"id\":\"src-drawer-h\",\"text\":\"5 sources\",\"src\":null,\"srcText\":null,\"figure\":null,\"section\":null}"
+    },
+    {
+      "name": "the drawer is modal (the page behind is inert)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "Tab reaches \"Show the text the analyst read\" inside the drawer",
+      "ok": true,
+      "detail": "2 presses"
+    },
+    {
+      "name": "Enter shows the verified text and marks the button expanded",
+      "ok": true,
+      "detail": "true"
+    },
+    {
+      "name": "focus stays inside the drawer while it is open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "at 1440 px the drawer is a 620 px side panel the full height of the window",
+      "ok": true,
+      "detail": "[1440,620,900]"
+    },
+    {
+      "name": "Escape closes the drawer and focus returns to its opener",
+      "ok": true,
+      "detail": "{\"tag\":\"BUTTON\",\"id\":\"\",\"text\":\"Sources behind that section (5)\",\"src\":\"E11,E12,E13,E14,E15\",\"srcText\":null,\"figure\":null,\"section\":null}"
+    },
+    {
+      "name": "Tab reaches the figure trace for 22.4%",
+      "ok": true,
+      "detail": "4 presses"
+    },
+    {
+      "name": "the drawer shows the source line that states the figure",
+      "ok": true,
+      "detail": "Revenue growth (YoY): 22.4%"
+    },
+    {
+      "name": "the coverage table has one row group per analyst",
+      "ok": true,
+      "detail": "Market Analyst,Sentiment Analyst,News Analyst,Fundamentals Analyst"
+    },
+    {
+      "name": "section I has a sources button per analyst",
+      "ok": true,
+      "detail": "Market Analyst sources (3),Sentiment Analyst sources (3),News Analyst sources (4),Fundamentals Analyst sources (5)"
+    },
+    {
+      "name": "a section I button opens that analyst's sources",
+      "ok": true,
+      "detail": "E11,E12,E13,E14,E15"
+    },
+    {
+      "name": "focus returns to the section I button",
+      "ok": true,
+      "detail": "{\"tag\":\"BUTTON\",\"id\":\"\",\"text\":\"Fundamentals Analyst sources (5)\",\"src\":\"E11,E12,E13,E14,E15\",\"srcText\":null,\"figure\":null,\"section\":null}"
+    },
+    {
+      "name": "choosing a section by keyboard keeps focus on its chip",
+      "ok": true,
+      "detail": "{\"tag\":\"BUTTON\",\"id\":\"\",\"text\":\"V. Portfolio Manager Decision\",\"src\":null,\"srcText\":null,\"figure\":null,\"section\":\"V. Portfolio Manager Decision\"}"
+    },
+    {
+      "name": "section V does not include the Sources appendix",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a partial report says why it stopped and that it has no rating",
+      "ok": true,
+      "detail": "Partial research. Stopped by the user while Trader was running. No rating; this is not a decision to act on."
+    },
+    {
+      "name": "a partial report shows no rating plate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "a report saved before C05 says its sources were not recorded",
+      "ok": true,
+      "detail": "Sources were not recorded for this report: it was saved before Crossclock kept what each analyst read. The brief shows what the report itself holds."
+    },
+    {
+      "name": "at 375 px the page does not scroll sideways",
+      "ok": true,
+      "detail": "0px"
+    },
+    {
+      "name": "at 375 px the drawer is a full-screen sheet",
+      "ok": true,
+      "detail": "[0,375]"
+    },
+    {
+      "name": "no console errors on any page",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "console_errors": [],
+  "passed": 31,
+  "checks": 31
+}

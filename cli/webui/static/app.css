@@ -412,6 +412,36 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .report-view { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; padding: 22px 24px; }
 .report-body { display: flex; flex-direction: column; gap: 14px; min-height: 420px; padding: 22px 24px; }
 
+/* The brief and its source drawer (docs/adr/0003) */
+.bf-h { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.bf-text { margin: 0; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.bf-facts { margin: 0; display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); gap: 6px 16px; font-size: 14px; }
+.bf-facts > div { display: contents; }
+.bf-facts dt { color: var(--text-3); }
+.bf-facts dd { margin: 0; overflow-wrap: anywhere; }
+.bf-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; }
+.bf-claim { display: flex; flex-direction: column; gap: 8px; }
+/* The statement wraps below its verdict when the column is narrow. */
+.bf-claim-head { gap: 6px 10px; align-items: flex-start; flex-wrap: wrap; }
+.bf-claim-head .bf-text { flex: 1 1 240px; min-width: 0; }
+.tbl .nowrap { white-space: nowrap; }
+.tbl tr.bf-group > th { padding-top: 14px; font-weight: 600; color: var(--text-2); background: none; }
+.bf-figures { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.bf-headline { display: flex; flex-direction: column; gap: 4px; }
+.bf-headline a, .src-entry a { color: var(--accent-text); }
+/* Two classes: .sc-dialog, later in this file, would otherwise set its own size. */
+.sc-dialog.src-drawer {
+  margin: 0 0 0 auto; width: min(620px, 100vw); max-width: 100vw; height: 100vh; max-height: 100vh;
+  border-radius: 18px 0 0 18px; overflow-y: auto; overscroll-behavior: contain;
+}
+/* The heading takes focus when the drawer opens, for screen readers; it is not a control. */
+.src-drawer h2[tabindex="-1"]:focus { outline: none; }
+.src-entry { padding-top: 16px; border-top: 1px solid var(--line); }
+.src-line { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.src-line .mono { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.src-pre { margin: 10px 0 0; max-height: 50vh; overflow: auto; padding: 12px 14px; font-size: 12px; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; background: var(--well); border: 1px solid var(--line); border-radius: 10px; }
+
 /* Backtest page ----------------------------------------------------------- */
 .bt-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .progress-card { display: flex; align-items: center; gap: 24px; padding: 18px 22px; flex-wrap: wrap; border-color: var(--info-line); box-shadow: var(--sh-1), 0 0 0 4px var(--info-soft); }
@@ -761,6 +791,9 @@ th.r .sc-sort { justify-content: flex-end; }
   .co-quote { align-items: flex-start; }
 }
 @media (max-width: 640px) {
+  .sc-dialog.src-drawer { width: 100vw; border-radius: 0; padding: 18px 16px; }
+  .bf-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .bf-facts dd { margin-bottom: 8px; }
   .side-menu {
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
     border: 1px solid var(--line); border-radius: 12px; background: var(--well); color: var(--text);

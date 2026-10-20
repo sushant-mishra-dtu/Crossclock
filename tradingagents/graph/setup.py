@@ -22,6 +22,7 @@ from tradingagents.agents import (
 )
 from tradingagents.agents.analysts.turn import WRAP_UP
 from tradingagents.agents.state import AgentState
+from tradingagents.dataflows.provenance import recorded_tools, recording_evidence
 from tradingagents.run_control import recording_checks
 
 from .analyst_execution import build_analyst_execution_plan
@@ -54,7 +55,8 @@ def _tools_or_done(state) -> str:
 def _analyst_graph(spec, agent, max_tool_rounds: int):
     """One analyst as a graph of its own: the model and its tools, on a private message history.
 
-    It returns only its report (and the spec's ``extra_outputs``), so analysts
+    It returns only its report, the spec's ``extra_outputs`` and what it read
+    (``evidence``, docs/adr/0003), so analysts
     running side by side never write the same key, and its tool calls never
     reach the other analysts' messages. After ``max_tool_rounds`` rounds of tool
     calls it is told to write its report, and that turn ends it whatever it
@@ -62,10 +64,12 @@ def _analyst_graph(spec, agent, max_tool_rounds: int):
     recursion limit (#1420).
     """
     hints = get_type_hints(AgentState)
+    # Every analyst also returns what it read (docs/adr/0003).
+    outputs = (*spec.extra_outputs, "evidence")
     output = TypedDict(f"{spec.key.capitalize()}Report",
-                       {spec.report_key: str, **{key: hints[key] for key in spec.extra_outputs}})
+                       {spec.report_key: str, **{key: hints[key] for key in outputs}})
     graph = StateGraph(AgentState, output_schema=output)
-    agent = recording_checks(agent)
+    agent = recording_evidence(recording_checks(agent), spec.agent_node)
     graph.add_node("agent", agent)
     graph.add_edge(START, "agent")
     if not spec.tools:
@@ -87,7 +91,7 @@ def _analyst_graph(spec, agent, max_tool_rounds: int):
                        spec.agent_node, max_tool_rounds, repeated)
         return agent({**state, "messages": [*state["messages"], HumanMessage(WRAP_UP)]})
 
-    graph.add_node("tools", ToolNode(list(spec.tools)))
+    graph.add_node("tools", ToolNode(recorded_tools(spec.tools)))
     graph.add_node("wrap_up", wrap_up)
     graph.add_conditional_edges("agent", _tools_or_done, ["tools", END])
     graph.add_conditional_edges("tools", more_or_wrap_up, ["agent", "wrap_up"])

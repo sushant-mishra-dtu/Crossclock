@@ -7,11 +7,16 @@ run produces the same on-disk report tree a CLI run does.
 """
 
 import json
+import os
+import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
+from tradingagents.agents.context import resolved_identity
 from tradingagents.agents.rating import run_rating
 from tradingagents.completion import is_complete, status_line
+from tradingagents.dataflows.provenance import ordered_entries, store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 
 
@@ -96,6 +101,95 @@ def _report_parts(final_state: dict) -> list[tuple[str, str, list[tuple[str, str
     return parts
 
 
+def _cell(value) -> str:
+    return str(value if value not in (None, "") else "").replace("|", "\\|").replace("\n", " ")
+
+
+def _markdown_link(title, url) -> str | None:
+    """A vendor's article link as Markdown: web addresses only, its title unable to break out.
+
+    A feed is vendor-controlled text: a ``javascript:`` or ``data:`` address, or a
+    title holding brackets, must not become a live or altered link in a download.
+    """
+    if not isinstance(url, str) or not re.match(r"https?://", url, re.IGNORECASE):
+        return None
+    text = re.sub(r"([\\\[\]|])", r"\\\1", str(title or url)).replace("\n", " ")
+    return f"[{text}](<{quote(url, safe=_URL_SAFE)}>)"
+
+
+_URL_SAFE = ":/?#[]@!$&'()*+,;=%~-._"
+
+
+def _answered(entry: dict) -> list[dict]:
+    return [a for a in entry.get("acquisitions") or () if a.get("outcome") == "ok"]
+
+
+_SOURCES_OPENING = ("## Sources\n\nWhat each analyst read for this report, in the order it read them. "
+                    "The texts stay with the saved report on this computer; this list only names them.")
+
+
+def strip_sources_appendix(text: str) -> str:
+    """A saved report without its Sources appendix, found by its exact opening at the end."""
+    cut = text.rfind("\n" + _SOURCES_OPENING)
+    return text if cut < 0 else text[:cut]
+
+
+def sources_markdown(entries: list[dict]) -> str:
+    """The report's Sources appendix: what each analyst read, never the texts (docs/adr/0003)."""
+    lines = [
+        _SOURCES_OPENING, "",
+        "| ID | Analyst | Tool | Source | Window | As of | Fetched (UTC) | Coverage |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    links = []
+    for e in entries:
+        answered = _answered(e)
+        first = answered[0] if answered else {}
+        sources = ", ".join(dict.fromkeys(a["source"] for a in answered)) or "not recorded"
+        start, end = first.get("window_start"), first.get("window_end")
+        window = f"{start} to {end}" if start and end else (start or end or "")
+        fetched = (first.get("fetched_at") or "")[:19].replace("T", " ")
+        lines.append("| " + " | ".join(_cell(v) for v in (
+            e["id"], e.get("analyst"), e.get("tool"), sources, window, first.get("as_of"), fetched,
+            e.get("coverage"))) + " |")
+        for a in answered:
+            for item in a.get("items") or ():
+                link = _markdown_link(item.get("title"), item.get("url"))
+                if link:
+                    published = item.get("published_at") or "publication time unknown"
+                    links.append(f"- {e['id']}: {link} ({_cell(item.get('publisher'))}, {_cell(published)})")
+    if links:
+        lines += ["", "Articles linked from these sources:", "", *dict.fromkeys(links)]
+    return "\n".join(lines)
+
+
+def _instrument(final_state: dict) -> dict:
+    return {"ticker": final_state.get("company_of_interest"), "trade_date": final_state.get("trade_date"),
+            "asset_type": final_state.get("asset_type"),
+            **resolved_identity(final_state.get("instrument_context") or "")}
+
+
+def _write_evidence(final_state: dict, save_path: Path, store) -> list[dict] | None:
+    """``evidence.json`` beside the report; None for a state saved before C05 recorded reads.
+
+    ``store`` is where the run kept its texts (``provenance.store_dir`` of its
+    config); without one, the current config's.
+    """
+    if "evidence" not in final_state:
+        return None
+    entries = ordered_entries(final_state.get("evidence"))
+    store = store_dir() if store is None else Path(store)
+    if store is not None:
+        try:
+            store = Path(os.path.relpath(store, save_path)).as_posix()
+        except ValueError:      # another drive on Windows
+            store = str(store)
+    (save_path / "evidence.json").write_text(json.dumps(
+        {"schema": 1, "store": store, "instrument": _instrument(final_state), "entries": entries},
+        indent=2, ensure_ascii=False), encoding="utf-8")
+    return entries
+
+
 def report_dir(results_dir, ticker: str, suffix: str = "") -> Path:
     """Where a run's report tree goes under ``results_dir``, stamped now."""
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -103,7 +197,7 @@ def report_dir(results_dir, ticker: str, suffix: str = "") -> Path:
 
 
 def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool, completion,
-                name: str) -> Path:
+                name: str, evidence_store=None) -> Path:
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     parts = _report_parts(final_state)
@@ -122,20 +216,28 @@ def _write_tree(final_state: dict, ticker: str, save_path, settings, html: bool,
 
     if completion is not None:
         (save_path / "run_status.json").write_text(json.dumps(completion, indent=2), encoding="utf-8")
+    # What the analysts read, and the claim check as data, for the brief (docs/adr/0003).
+    entries = _write_evidence(final_state, save_path, evidence_store)
+    if final_state.get("claim_check") is not None:
+        (save_path / "claim_check.json").write_text(
+            json.dumps(final_state["claim_check"], indent=2, ensure_ascii=False), encoding="utf-8")
+    sources = sources_markdown(entries) if entries is not None else None
     (save_path / f"{name}.md").write_text(
-        _header(ticker, final_state, settings, completion) + "\n\n".join(sections), encoding="utf-8"
+        _header(ticker, final_state, settings, completion) + "\n\n".join(sections)
+        + (f"\n\n{sources}\n" if sources else ""), encoding="utf-8"
     )
     if html:
         from tradingagents.report_html import render_report
 
         (save_path / f"{name}.html").write_text(
-            render_report(ticker, final_state, settings, parts, completion=completion), encoding="utf-8"
+            render_report(ticker, final_state, settings, parts, completion=completion, sources=sources),
+            encoding="utf-8",
         )
     return save_path / f"{name}.md"
 
 
 def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict | None = None,
-                      html: bool = True, completion: dict | None = None) -> Path:
+                      html: bool = True, completion: dict | None = None, evidence_store=None) -> Path:
     """Save a completed run's reports to ``save_path``; return the complete-report path.
 
     ``settings`` (``TradingAgentsGraph.run_settings()``) adds what produced the run
@@ -143,14 +245,17 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
     self-contained page of the same report (#1419). ``completion`` (see
     ``tradingagents.completion``) adds the run's status line, naming any check
     that did not run, and is saved beside the report as ``run_status.json``.
+    ``evidence_store`` is where the run kept the texts its analysts read
+    (``provenance.store_dir(config)``; docs/adr/0003).
     """
     if completion is not None and not is_complete(completion):
         raise ValueError("an incomplete run is saved with write_partial_report, not as a complete report")
-    return _write_tree(final_state, ticker, save_path, settings, html, completion, "complete_report")
+    return _write_tree(final_state, ticker, save_path, settings, html, completion, "complete_report",
+                       evidence_store)
 
 
 def write_partial_report(final_state: dict, ticker: str, save_path, completion: dict,
-                         settings: dict | None = None, html: bool = True) -> Path:
+                         settings: dict | None = None, html: bool = True, evidence_store=None) -> Path:
     """Save what an interrupted run finished; return the partial-report path.
 
     It is ``partial_report.md`` (and ``.html``), never ``complete_report.md``,
@@ -158,4 +263,5 @@ def write_partial_report(final_state: dict, ticker: str, save_path, completion: 
     that reads saved reports (the history page, the 129BOB importer) can take
     it for finished research. ``run_status.json`` holds the completion record.
     """
-    return _write_tree(final_state, ticker, save_path, settings, html, completion, "partial_report")
+    return _write_tree(final_state, ticker, save_path, settings, html, completion, "partial_report",
+                       evidence_store)

@@ -36,6 +36,9 @@ class Propagator:
             "past_context": past_context,
             "memory_note": "",
             "portfolio_context": portfolio_context,
+            # What the analysts read (docs/adr/0003); present from the start, so a
+            # report can tell "read nothing" from "saved before reads were kept".
+            "evidence": {},
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",
