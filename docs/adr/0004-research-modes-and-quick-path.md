@@ -7,7 +7,9 @@ The owner accepted all three recommended choices on 20 October 2026: local
 point-in-time facts and bounded recent prices/news plus one synthesis; a 60 s
 active budget excluding queue time, no generation retry and partial retention;
 Standard preserved and Deep planned/unavailable until targeted retrieval exists.
-Implementation is in progress. No live calls, speed claims or spend authorized.
+The first slice (Quick and Standard; Deep unavailable) is implemented and fixture
+tested; see the implementation record below. No live calls, speed claims or
+spend authorized.
 
 ## Context
 
@@ -298,7 +300,34 @@ retained as design history; they are not pending questions.
    to design and implement targeted retrieval plus an explicit Deep budget;
    do not substitute the existing five-round setting for that work.
 
-**Owner answer, 20 October 2026:** option A for all three questions (scope, 60 s budget, Deep shown unavailable). Implementation not started.
+**Owner answer, 20 October 2026:** option A for all three questions (scope, 60 s budget, Deep shown unavailable). Implemented the same day; see the implementation record.
+
+## Implementation record (20 October 2026)
+
+Codex built the first slice test-first in `feat/c06-quick`; it reached `main`
+as `4ab64a3` (build `9dbcb33`). Claude Code verified it through the real
+spawned workers, router, evidence session and OpenAI SDK against a loopback
+fake provider ([tests](../../tests/test_c06_worker_e2e.py)), and in a keyboard
+walkthrough at 1440 px and 375 px in both themes
+([record](../benchmarks/c06-walkthrough.json), 127 of 127). Two corrections:
+
+- **Price window format (section 2, step 5).** The figure checks read a comma
+  between digits as a thousands separator, so `99,101.5` in a CSV row is one
+  number and no cited price could be traced. Quick's price view is now
+  pipe-separated. The shared parser is unchanged, because Standard's claim
+  checks use it.
+- **Provider failure (sections 4 and 5).** A provider error during the one
+  synthesis was saved as a generic `error`. It is now `provider_error` with
+  C03's failure record (class, provider, model, one attempt); the worker sends
+  only the error type and class, never the message. A timeout at the 40 s
+  attempt cap is a provider timeout; a cut by the run's own budget stays
+  `deadline`.
+
+Spawned workers import the calling script again, so a script that calls
+`run_research` for Quick needs a `__main__` guard; the shipped entry points
+have one. Still open: the trade-instruction screen also withholds plain
+factual sentences (an owner choice between safety margin and usefulness), and
+Deep.
 
 ## Integration note
 
