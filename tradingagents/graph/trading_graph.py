@@ -13,6 +13,7 @@ from tradingagents.agents.rating import run_rating
 from tradingagents.completion import IncompleteResearch, is_complete, run_completion
 from tradingagents.dataflows.config import run_config, run_config_context, set_config
 from tradingagents.dataflows.date_window import get_current_date, is_historical
+from tradingagents.dataflows.provenance import store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client, tier_provider
@@ -303,7 +304,7 @@ class TradingAgentsGraph:
         trace = current_trace()
         with trace.scope("persistence", "report_tree") if trace else nullcontext():
             path = write_report_tree(final_state, ticker, save_path, settings=self.run_settings(), html=html,
-                                     completion=completion)
+                                     completion=completion, evidence_store=store_dir(self.config))
         if trace:
             trace.milestone("persisted_report")
         return path
@@ -315,7 +316,8 @@ class TradingAgentsGraph:
         trace = current_trace()
         with trace.scope("persistence", "partial_report") if trace else nullcontext():
             path = write_partial_report(final_state, ticker, save_path, completion,
-                                        settings=self.run_settings(), html=html)
+                                        settings=self.run_settings(), html=html,
+                                        evidence_store=store_dir(self.config))
         if trace:
             trace.milestone("persisted_partial_report")
         return path

@@ -35,10 +35,11 @@ from tradingagents.completion import (
     run_completion,
     stop_reason_for,
 )
+from tradingagents.dataflows.provenance import store_dir
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.graph.analyst_execution import build_analyst_execution_plan
 from tradingagents.memory import TradingMemoryLog
-from tradingagents.reporting import report_dir, write_partial_report
+from tradingagents.reporting import report_dir, strip_sources_appendix, write_partial_report
 from tradingagents.run_control import (
     DeadlineExceeded,
     RunBudget,
@@ -398,7 +399,7 @@ class AnalysisJob:
                     partial = write_partial_report(
                         final_state, self.ticker,
                         report_dir(self.config.get("results_dir", "results"), self.ticker, "_partial"),
-                        completion, settings=settings)
+                        completion, settings=settings, evidence_store=store_dir(self.config))
                 self.trace.milestone("persisted_partial_report")
             except Exception as save_exc:  # the run's status stands even if its partial report cannot be written
                 log.warning("Partial report for analysis %s could not be saved (%s)",
@@ -703,7 +704,9 @@ def _report_header(path: Path) -> tuple[str, str | None]:
 def load_report_sections(report: SavedReport) -> list[tuple[str, str]]:
     """(title, markdown) sections of a saved report, in pipeline order."""
     if report.kind in ("report", "partial"):
-        text = report.path.read_text(encoding="utf-8")
+        # The Sources appendix after section V (docs/adr/0003) is not part of it.
+        # Only its exact opening is cut: an analyst's own text may hold "## " headings.
+        text = strip_sources_appendix(report.path.read_text(encoding="utf-8"))
         heads = list(_SECTION_RE.finditer(text))
         ends = [h.start() for h in heads[1:]] + [len(text)]
         return [(h.group(1).strip(), text[h.end():end].strip())

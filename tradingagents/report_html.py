@@ -249,11 +249,12 @@ def _run_details(final_state: dict, settings: dict | None) -> list[tuple[str, st
 
 
 def render_report(ticker: str, final_state: dict, settings: dict | None, parts,
-                  completion: dict | None = None) -> str:
+                  completion: dict | None = None, sources: str | None = None) -> str:
     """The report page: title and rating, what produced the run, contents, sections.
 
     A partial run (``completion`` not complete) shows no rating and opens with
-    a banner saying why it stopped.
+    a banner saying why it stopped. ``sources`` is the Sources appendix
+    (``reporting.sources_markdown``), shown last.
     """
     md = _markdown()
     partial = completion is not None and not is_complete(completion)
@@ -291,6 +292,10 @@ def render_report(ticker: str, final_state: dict, settings: dict | None, parts,
         for m, (agent, _filename, text) in enumerate(written, 1):
             body.append(f'<h3 id="s{n}-{m}">{escape(agent)}</h3>\n{_render_agent_text(md, text)}')
         body.append("</section>")
+    if sources:
+        _heading, _, table = sources.partition("\n")
+        contents.append('<li><a href="#sources"><span class="label">Sources</span></a></li>')
+        body.append(f'<section id="sources"><h2>Sources</h2>\n{md.render(table)}</section>')
 
     page_title = " ".join(x for x in (ticker, date, rating or ("partial" if partial else "")) if x)
     return f"""<!doctype html>
