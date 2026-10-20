@@ -365,6 +365,13 @@ def test_a_bearish_call_right_before_costs_can_be_wrong_after_them(tmp_path, rat
 
 
 @pytest.mark.unit
+def test_the_render_shows_the_net_figures_of_a_rating_no_call_of_which_survived_costs(tmp_path):
+    summary = _summary(tmp_path, [("NVDA", "2026-01-05", "Rating: Sell\n\nx", (-0.01, -0.002))], cost_bps=30)
+    [line] = [line for line in summary.render().splitlines() if line.startswith("- Sell")]
+    assert line.endswith("; after costs right 0%, mean net -0.10%")
+
+
+@pytest.mark.unit
 def test_net_figures_average_over_the_ratings_calls(tmp_path):
     # Two Buys at 30 bps: +0.5% nets +0.2%, -0.2% nets -0.5%; mean -0.15%, one of two right.
     buy = _summary(tmp_path, [
@@ -377,9 +384,10 @@ def test_net_figures_average_over_the_ratings_calls(tmp_path):
 
 @pytest.mark.unit
 def test_a_call_that_only_earns_its_cost_back_is_not_a_net_hit(tmp_path):
-    # +0.3% at 30 bps nets exactly zero; float noise in 0.3 / 100 - 30 / 10000 must not make it a hit.
-    buy = _summary(tmp_path, [("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.003))],
-                   cost_bps=30).by_rating["Buy"]
+    # +0.9% at 90 bps nets zero, yet 0.9 / 100 - 90 / 10000 is +1.7e-18 in floats;
+    # that noise must not turn a break-even call into a hit.
+    buy = _summary(tmp_path, [("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.009))],
+                   cost_bps=90).by_rating["Buy"]
     assert buy.net_hit_rate == 0.0
     assert buy.mean_net == pytest.approx(0.0, abs=1e-12)
 
@@ -411,6 +419,15 @@ def test_the_default_cost_follows_the_tickers_market(ticker, bps):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("ticker", ["500325.BO", "reliance.ns"])
+def test_an_indian_listing_is_costed_as_indian_not_as_another_market(tmp_path, ticker):
+    """The stand-in for other markets is also 30 bps, so only the label tells them apart."""
+    text = _flat(_summary(tmp_path, [(ticker, "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.005))]).render())
+    assert "30 bps for NSE/BSE delivery" in text
+    assert "other markets" not in text
+
+
+@pytest.mark.unit
 def test_without_a_cost_each_call_pays_its_markets_default(tmp_path):
     # RELIANCE.NS +0.5% at 30 bps nets +0.2%; NVDA +0.5% at 5 bps nets +0.45%; mean +0.325%.
     summary = _summary(tmp_path, [
@@ -423,8 +440,8 @@ def test_without_a_cost_each_call_pays_its_markets_default(tmp_path):
     assert "5 bps" in text and "US" in text
 
 
-# The unchanged code's figures and lines for this log (`.scratch\r2\old_render.py` on
-# main `4ab64a3`). A cost changes only the new net figures, never these.
+# What the code before costs printed for this log (main at `4ab64a3`). A cost
+# changes only the new net figures, never these.
 _GUARD_ROWS = [
     ("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.10, 0.04)),
     ("NVDA", "2026-01-12", "Rating: Buy\n\nx", (-0.02, -0.02)),
