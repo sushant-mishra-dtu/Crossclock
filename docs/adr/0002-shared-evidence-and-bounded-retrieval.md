@@ -172,7 +172,8 @@ Low notes; no change proposed:
 sends ignore Stop and the deadline, contrary to
 [ADR 0001](0001-bounded-execution-and-run-status.md). `jev.py` already copies the
 context for each request. The same fix, plus a control check and an
-interruptible wait in that retry loop, belongs with C03, test-first.
+interruptible wait in that retry loop, belongs with C03, test-first. Fixed
+the same day ([tests](../../tests/test_c03_post_screen.py)).
 
 The questions for the owner below remain open.
 
