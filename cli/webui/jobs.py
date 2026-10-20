@@ -876,8 +876,9 @@ def load_decisions(log_path) -> list[dict]:
     return rows
 
 
-def backtest_summary(log_path):
-    return summarize(TradingMemoryLog({"memory_log_path": str(log_path)}))
+def backtest_summary(log_path, cost_bps: float | None = None):
+    """The CLI's summary of a backtest log, costed the same way (each market's default unless given)."""
+    return summarize(Path(log_path), cost_bps=cost_bps)
 
 
 def _pct(text) -> float | None:
