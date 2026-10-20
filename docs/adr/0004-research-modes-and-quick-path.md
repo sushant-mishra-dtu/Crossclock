@@ -301,3 +301,10 @@ not propagate to main. This design is based on `cc97989`, with its PR targeting
 `docs/c05-design` so its diff contains only C06 documents. Reconcile the C05
 branch into main before landing implementation. No earlier PR is still
 awaiting its original merge, and no branch has been merged by this task.
+
+**Resolution, 20 October 2026:** the owner requested consolidation of every
+branch into main. [PR #8](https://github.com/sushant-mishra-dtu/Crossclock/pull/8)
+includes C05 and this proposed design, together with every other outstanding
+branch tip. The merged code tree passed the full offline gate (2,265 passed;
+Ruff clean). This resolves the integration gap; it does not select the proposed
+C06 options or implement Quick/Deep.
