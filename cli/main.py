@@ -7,10 +7,17 @@ from cli.display import console
 from cli.models import AnalystType, AssetType
 from cli.prompts import filter_analysts_for_asset_type, parse_analysts
 from cli.run import run_analysis
-from tradingagents.backtest import check_cost_bps, iter_grid, run_backtest, summarize
+from tradingagents.backtest import (
+    check_cost_bps,
+    iter_grid,
+    record_summary,
+    run_backtest,
+    summarize,
+)
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.portfolio import load_portfolio
+from tradingagents.trials import ledger_path, question_set_version, record_trial
 
 # prompt_toolkit's win32 output module is importable only on Windows (it asserts
 # the platform at import time), so gate on the platform rather than catching the
@@ -159,8 +166,15 @@ def backtest(
     except Exception as exc:  # a missing key or an unknown analyst is a setup error
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from None
-    console.print(summarize(result, cost_bps=cost_bps).render())
+    summary = summarize(result, cost_bps=cost_bps)
+    ledger = ledger_path(DEFAULT_CONFIG["results_dir"])
+    try:
+        record_summary(DEFAULT_CONFIG["results_dir"], result, summary)
+    except OSError as exc:  # the summary stands; without the count it is only not deflated
+        console.print(f"[yellow]Could not add this summary to the trial ledger {ledger}: {exc}[/yellow]")
+    console.print(summary.render())
     console.print(f"\nRan {result.cells_run} cells, skipped {result.skipped}. Log: {result.log_path}")
+    console.print(f"Trial ledger file: {ledger}", soft_wrap=True)
     console.print(f"Continue or settle this sweep: --run-id {result.run_id}")
     for ticker, date, reason in result.failures:
         console.print(f"[yellow]failed:[/yellow] {ticker} {date}: {reason}")
@@ -190,14 +204,15 @@ def learn(
                       "backtest, the folder its log was written to.[/red]")
         raise typer.Exit(code=1)
     try:
-        from tradingagents.report_features import JevUnavailable, learn_from_run
+        from tradingagents.report_features import QUESTIONS, JevUnavailable, learn_from_run
     except ImportError:
         console.print(escape('Learning from reports needs the jev extra: pip install "tradingagents[jev]"'),
                       style="red")
         raise typer.Exit(code=1) from None
 
     try:
-        result = learn_from_run(run_dir, holdout=holdout)
+        # The questions are named here so the trial ledger records the set that was asked.
+        result = learn_from_run(run_dir, holdout=holdout, questions=QUESTIONS)
     except (ValueError, JevUnavailable) as exc:  # too few decisions, a bad holdout, no Jev
         console.print(escape(str(exc)), style="red")
         raise typer.Exit(code=1) from None
@@ -208,6 +223,23 @@ def learn(
         console.print(f"[yellow]The answers come from several models ({', '.join(sorted(result.models))}); "
                       "pin jev_model and ask again before comparing questions.[/yellow]")
     console.print(f"Feature table: {result.table_path}", soft_wrap=True)
+
+    from tradingagents.outcome_model import L2_GRID, N_FOLDS
+
+    ledger = ledger_path(DEFAULT_CONFIG["results_dir"])
+    dates = sorted(d.date for d in result.decisions.decisions)
+    config = {"questions": [q.id for q in QUESTIONS], "question_set": question_set_version(QUESTIONS),
+              "holdout": holdout, "l2_grid": list(L2_GRID), "folds": N_FOLDS,
+              "models": [m.name for m in result.evaluation.models], "jev_models": sorted(result.models)}
+    try:
+        count = record_trial(DEFAULT_CONFIG["results_dir"], "learn", config, (dates[0], dates[-1]),
+                             run_id=run_dir.name)
+    except OSError as exc:
+        console.print(f"Could not add this evaluation to the trial ledger {ledger}: {exc}",
+                      style="yellow", markup=False)
+        return
+    console.print(f"Trial ledger: {count.describe()} of learn on analysis dates overlapping "
+                  f"{dates[0]} to {dates[-1]}, in {ledger}", markup=False, soft_wrap=True)
 
 
 ALLOW_HOST = typer.Option(None, "--allow-host", help="A host name the UI may be opened by (repeatable); "

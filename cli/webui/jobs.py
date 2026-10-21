@@ -21,7 +21,7 @@ from pathlib import Path
 from cli.display import ANALYST_ORDER, AnalystWallTimeTracker, MessageBuffer, process_chunk
 from cli.stats_handler import StatsCallbackHandler
 from tradingagents.agents.rating import is_review, parse_rating, run_rating
-from tradingagents.backtest import run_backtest, summarize
+from tradingagents.backtest import record_summary, run_backtest, summarize
 from tradingagents.completion import (
     PARTIAL,
     STOP_CANCELLED,
@@ -573,6 +573,8 @@ class BacktestJob:
                 portfolio=self.portfolio, selected_analysts=self.analysts, run_id=self.run_id,
                 on_cell=self._on_cell, should_stop=self._cancel.is_set,
             )
+            if not self.result.stopped:
+                self._record()
             self.status = CANCELLED if self.result.stopped else DONE
         except Exception as exc:
             log.exception("Backtest %s failed", self.id)
@@ -584,6 +586,15 @@ class BacktestJob:
 
     def _on_cell(self, ticker: str, date: str) -> None:
         self.current = (ticker, date)
+
+    def _record(self) -> None:
+        """Count the finished sweep in the trial ledger, as the CLI does, at each
+        market's default cost (what the Backtest page shows). A stopped sweep is
+        counted when the resumed one finishes."""
+        try:
+            record_summary(self.config["results_dir"], self.result, summarize(self.result))
+        except Exception:  # the sweep succeeded; a ledger failure must not fail it
+            log.exception("Could not add backtest %s to the trial ledger", self.id)
 
 
 class JobRegistry:

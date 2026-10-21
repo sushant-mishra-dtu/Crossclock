@@ -13,6 +13,13 @@ put an execution model behind an evaluation tool. Cells are therefore
 independent, and a portfolio, when given, is the same standing book for every
 cell rather than a position carried forward. Trading costs follow the same rule:
 one round trip is taken off each directional call's alpha, with no fill behind it.
+
+"Follow the ratings" is scored the same way, with no book behind it: one period
+per analysis date, returning the mean net of that date's directional calls. Its
+Sharpe ratio comes with the probabilistic and deflated Sharpe ratios
+(``tradingagents.sharpe``); the deflation counts the configurations tried on
+overlapping dates in the trial ledger (``tradingagents.trials``), to which each
+summary the ``backtest`` command prints is appended.
 """
 
 from __future__ import annotations
@@ -30,6 +37,8 @@ from tradingagents.dataflows.symbols import crypto_base, safe_ticker_component
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.memory import TradingMemoryLog
 from tradingagents.run_control import DeadlineExceeded, RunCancelled
+from tradingagents.sharpe import SharpeStats, deflated_sharpe, probabilistic_sharpe, sharpe_stats
+from tradingagents.trials import TrialCount, Window, record_trial
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +96,18 @@ class BacktestResult:
     failures: list[tuple[str, str, str]] = field(default_factory=list)
     settlement_failures: list[tuple[str, str]] = field(default_factory=list)
     stopped: bool = False  # should_stop ended the sweep before every cell ran
+    config: dict = field(default_factory=dict)  # what the sweep tried, for the trial ledger
+
+
+# The settings that change what a sweep decides. Paths and the run id do not, so a
+# resumed or moved sweep is the same configuration.
+_TRIAL_SETTINGS = (
+    "llm_provider", "deep_think_llm", "quick_think_llm", "deep_think_provider", "quick_think_provider",
+    "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "temperature", "max_tokens",
+    "output_language", "max_debate_rounds", "max_risk_discuss_rounds", "max_tool_rounds",
+    "jev_enabled", "jev_claim_check", "jev_model", "research_mode", "holding_period_days",
+    "benchmark_ticker", "data_vendors", "tool_vendors",
+)
 
 
 # What each rating claims will happen, so an outcome can be scored against it.
@@ -124,6 +145,12 @@ US_STOCK_COST_BPS = 5.0
 
 # The log keeps alpha to 0.1 of a percentage point, so it cannot resolve a smaller cost.
 _LOG_PRECISION_BPS = 10
+
+# Below this many periods a Sharpe ratio and its skew and kurtosis say nothing (learn
+# asks for as many analysis dates).
+MIN_SHARPE_PERIODS = 6
+# The deflated Sharpe ratio a result must reach to be told from the best of N tries of chance.
+DSR_THRESHOLD = 0.95
 
 
 def _cost_market(ticker: str) -> tuple[str, float]:
@@ -172,6 +199,10 @@ class BacktestSummary:
     holding: str = ""
     cost_bps: float | None = None  # one figure for every call; None: each market's default
     costs: dict[str, float] = field(default_factory=dict)  # market -> bps taken off its calls
+    # Following the ratings: (analysis date, mean net of its directional calls), by date.
+    periods: list[tuple[str, float]] = field(default_factory=list)
+    window: Window | None = None   # the first and last analysis date scored
+    trials: TrialCount | None = None  # from the trial ledger; None: not deflated
 
     def render(self) -> str:
         lines = [f"Resolved cells: {self.resolved} · pending: {self.pending}"
@@ -194,7 +225,57 @@ class BacktestSummary:
             "these figures are indicative rather than repeatable."
         )
         lines.extend(self.cost_lines())
+        lines.extend(self.sharpe_lines())
         return "\n".join(lines)
+
+    def sharpe(self) -> SharpeStats | None:
+        """Sharpe ratio, skew and kurtosis of following the ratings; None with too few
+        periods, or periods that do not vary."""
+        if len(self.periods) < MIN_SHARPE_PERIODS:
+            return None
+        try:
+            return sharpe_stats([r for _, r in self.periods])
+        except ValueError:
+            return None
+
+    def sharpe_lines(self) -> list[str]:
+        """Following the ratings, as a Sharpe ratio, its PSR and, with a trial count, its DSR."""
+        if not self.periods:
+            return []
+        lines = [""]
+        stats = self.sharpe()
+        if len(self.periods) < MIN_SHARPE_PERIODS:
+            lines.append(f"Follow the ratings: too few periods for a Sharpe ratio ({len(self.periods)} "
+                         f"analysis dates with a directional call; it needs at least {MIN_SHARPE_PERIODS}).")
+        elif stats is None:
+            lines.append(f"Follow the ratings: the {len(self.periods)} period returns do not vary, "
+                         "so there is no Sharpe ratio.")
+        else:
+            psr = probabilistic_sharpe(stats.sharpe, stats.periods, stats.skew, stats.kurtosis)
+            lines += [
+                "Follow the ratings, one period per analysis date (the mean net return of that "
+                f"date's directional calls): {stats.periods} periods, Sharpe ratio {stats.sharpe:+.2f} "
+                f"a period (not annualised), skew {stats.skew:+.2f}, kurtosis {stats.kurtosis:.2f} "
+                "(3 for normal returns).",
+                f"Probabilistic Sharpe ratio: {psr:.2f}, the probability that the true Sharpe ratio "
+                "is above 0 given the periods, skew and kurtosis.",
+            ]
+            if self.trials is not None and self.trials.configurations:
+                n = self.trials.configurations
+                dsr = deflated_sharpe(stats.sharpe, stats.periods, stats.skew, stats.kurtosis, trials=n)
+                configurations = "configuration" if n == 1 else "configurations"
+                tries = "random try" if n == 1 else "random tries"
+                lines.append(f"Deflated Sharpe ratio: {dsr:.2f} (N = {n} {configurations}); below "
+                             f"{DSR_THRESHOLD} the result is not distinguishable from the best of "
+                             f"{n} {tries}.")
+            lines.append("These assume independent periods: analysis dates closer together than the "
+                         "holding window share returns and make them optimistic (Bailey and "
+                         "López de Prado, 2012 and 2014).")
+        if self.trials is not None and self.trials.runs and self.window:
+            first, last = self.window
+            lines.append(f"Trial ledger: {self.trials.describe()} of backtest on analysis dates "
+                         f"overlapping {first} to {last}; N counts the configurations.")
+        return lines
 
     def cost_lines(self) -> list[str]:
         """What the net figures took off each call; empty when no directional call is scored."""
@@ -256,6 +337,11 @@ def run_backtest(
 
     # A ticker or date given twice is one cell, run and settled once.
     tickers, dates = list(dict.fromkeys(tickers)), list(dict.fromkeys(dates))
+    result.config = {
+        "tickers": tickers, "dates": dates, "analysts": list(selected_analysts), "asset_type": asset_type,
+        "portfolio": portfolio.model_dump(mode="json") if hasattr(portfolio, "model_dump") else portfolio,
+        "settings": {key: config.get(key) for key in _TRIAL_SETTINGS},
+    }
     cells = [(ticker, date) for ticker in tickers for date in dates]
     todo = [cell for cell in cells if cell not in done]
     result.skipped = len(cells) - len(todo)
@@ -295,7 +381,9 @@ def summarize(source: BacktestResult | str | Path, cost_bps: float | None = None
 
     Each directional call is also scored net of one round trip: ``cost_bps`` for
     every call when given, else the default of the ticker's market
-    (:func:`default_cost_bps`).
+    (:func:`default_cost_bps`). The same nets, averaged over each analysis date's
+    directional calls, are the periods of following the ratings; a date with
+    none (only Hold, or nothing settled) is not a period.
     """
     check_cost_bps(cost_bps)
     if isinstance(source, BacktestResult):
@@ -312,6 +400,7 @@ def summarize(source: BacktestResult | str | Path, cost_bps: float | None = None
     resolved = [(e, a) for e, a in resolved if a is not None]
     by_rating: dict[str, RatingScore] = {}
     costs: dict[str, float] = {}
+    by_date: dict[str, list[float]] = {}  # the net of each directional call, by analysis date
     for rating in dict.fromkeys(e["rating"] for e, _ in resolved):
         calls = [(e, a) for e, a in resolved if e["rating"] == rating]
         alphas = [a for _, a in calls]
@@ -323,6 +412,7 @@ def summarize(source: BacktestResult | str | Path, cost_bps: float | None = None
             costs[market] = bps
             # Rounded so a call that only earns its cost back nets 0, not float noise either side.
             nets.append(round(direction * a - bps / 10_000, 12))
+            by_date.setdefault(e["date"], []).append(nets[-1])
         by_rating[rating] = RatingScore(
             count=len(alphas),
             hit_rate=(sum(a * direction > 0 for a in alphas) / len(alphas)) if direction else None,
@@ -334,8 +424,25 @@ def summarize(source: BacktestResult | str | Path, cost_bps: float | None = None
     # Report the window the outcomes were actually measured over, from the log.
     windows = {f"{e['holding'][:-1]} trading days" for e, _ in resolved
                if (e.get("holding") or "").endswith("d")}
+    days = sorted(e["date"] for e, _ in resolved)
     return BacktestSummary(resolved=len(resolved),
                            pending=len(entries) - len(resolved) - unscored,
                            by_rating=by_rating, unscored=unscored,
                            holding=", ".join(sorted(windows)) or "the configured window",
-                           cost_bps=cost_bps, costs=costs)
+                           cost_bps=cost_bps, costs=costs,
+                           periods=[(day, sum(nets) / len(nets)) for day, nets in sorted(by_date.items())],
+                           window=(days[0], days[-1]) if days else None)
+
+
+def record_summary(results_dir, result: BacktestResult, summary: BacktestSummary) -> TrialCount:
+    """Append a summary to the trial ledger in ``results_dir`` and keep the count on it.
+
+    Its configuration is the sweep's (``result.config``) and the cost; the count is
+    of backtests on analysis dates overlapping its own, this one included, and is
+    what the summary's deflated Sharpe ratio is deflated by.
+    """
+    stats = summary.sharpe()
+    summary.trials = record_trial(results_dir, "backtest", {**result.config, "cost_bps": summary.cost_bps},
+                                  summary.window, run_id=result.run_id, periods=len(summary.periods),
+                                  sharpe=stats.sharpe if stats else None)
+    return summary.trials

@@ -497,6 +497,12 @@ tradingagents learn sweep1
    does. A question whose columns all have a standard deviation under 0.05 on
    the dev decisions is flat. The five decisions the full model predicted worst
    are listed as the cases to read when proposing new questions.
+8. Each evaluation is appended to the trial ledger, `<results_dir>/trials.jsonl`:
+   the question set and a hash of its wording, the holdout, the L2 grid, the
+   models and the Jev models that answered, with the first and last analysis
+   date. The command prints how many distinct configurations and runs of
+   `learn` the ledger holds on overlapping dates. A question kept because it
+   won on one of many tries is the selection bias the count makes visible.
 
 **Questions (14):**
 

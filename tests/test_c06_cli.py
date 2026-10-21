@@ -177,6 +177,7 @@ def test_cli_backtest_pins_standard_even_when_default_mode_is_quick(monkeypatch,
     monkeypatch.setattr(main, "run_backtest", lambda *a, **kw: received.append(a[2]) or SimpleNamespace(
         cells_run=0, skipped=0, log_path=tmp_path, run_id="fixture", failures=[], settlement_failures=[]))
     monkeypatch.setattr(main, "summarize", lambda r, **kw: SimpleNamespace(render=lambda: "fixture"))
+    monkeypatch.setattr(main, "record_summary", lambda *a, **kw: None)  # a stub summary, not a trial
     result = CliRunner().invoke(main.app, ["backtest", "AAPL", "--start", "2026-10-15", "--end", "2026-10-16"])
     assert result.exit_code == 0, result.output
     assert received[0]["research_mode"] == "standard"
