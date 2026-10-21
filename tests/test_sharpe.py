@@ -16,6 +16,7 @@ Kurtosis here is not excess kurtosis: 3 for normal returns.
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 from statistics import NormalDist
 
 import pytest
@@ -113,7 +114,7 @@ def test_with_one_trial_the_deflated_ratio_is_the_probabilistic_one_against_zero
 @pytest.mark.unit
 def test_the_deflated_ratio_falls_as_the_number_of_trials_rises():
     values = [deflated_sharpe(0.4, 30, -0.5, 4.0, trials=n) for n in (1, 2, 3, 5, 10, 100, 1000)]
-    assert all(later < earlier for earlier, later in zip(values, values[1:]))
+    assert all(later < earlier for earlier, later in pairwise(values))
 
 
 @pytest.mark.unit

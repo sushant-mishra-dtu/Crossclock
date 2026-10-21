@@ -74,7 +74,7 @@ def test_a_reworded_question_is_a_new_version_of_the_set():
     overbought = next(q for q in rf.QUESTIONS if q.id == "overbought")
     reworded = rf.FeatureQuestion("overbought", "market", rf._noul(
         "Is `instrument` overbought, as `report` tells it?",
-        true=overbought.question.criteria.true, false=overbought.question.criteria.false))
+        true=overbought.question.criteria["true"], false=overbought.question.criteria["false"]))
     swapped = tuple(reworded if q.id == "overbought" else q for q in rf.QUESTIONS)
 
     assert question_set_version(rf.QUESTIONS) == question_set_version(tuple(rf.QUESTIONS))
