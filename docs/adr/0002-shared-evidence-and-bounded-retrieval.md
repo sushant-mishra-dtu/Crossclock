@@ -1,7 +1,8 @@
 # ADR 0002: Shared evidence and bounded retrieval (C04)
 
 Status: **Implemented and fixture tested** on 19 October 2026 (Asia/Calcutta).
-Not yet reviewed by the owner; no design was approved in advance, unlike
+Code reviewed by Claude Code on 20 October 2026: no correctness defect (see
+[Review](#review-20-october-2026)). No design was approved in advance, unlike
 [ADR 0001](0001-bounded-execution-and-run-status.md). Task: C04 in the
 [plan](../plan.md) and [progress tracker](../progress.md). Evidence class:
 source reviewed and fixture tested. No provider or data vendor was called.
@@ -123,6 +124,58 @@ a session never spans two configurations; that key field is defence in depth.
   measured.
 - No reuse across runs, no persisted records and no change-based invalidation
   (C08). Publication times reach feed items, not the evidence records.
+
+## Review (20 October 2026)
+
+Claude Code reviewed C04 as it stands on `main` (`4ab64a3`: the code from
+`07220d2` and the PR #4 close-out), as the owner asked on 20 October. Source
+reviewed; the C04 tests passed in the full offline gate on PR #9's tree (2,386
+passed). No live call.
+
+**No correctness defect found.** Checked:
+
+- **Session.** The first caller owns a request. Waiters check Stop and the
+  deadline every 50 ms and each get a deep copy. A failure reaches every waiter
+  and is never stored. An ineligible answer goes to the callers waiting on it
+  but is not retained. The permit is released on every path, including a Stop
+  between taking the permit and starting the load.
+- **No deadlock.** The two-per-source cap cannot deadlock through nesting: no
+  vendor function routes back through the router, and a waiter holds no permit.
+- **Isolation.** Every Standard entry point (CLI, web job, backtest cell, the
+  benchmark scripts) reaches `propagate` or `stream_run`, which start a fresh
+  session. A nested `run_config` shares only with an equal configuration. The
+  Quick runner (C06) starts its own.
+- **Request identity.** Arguments are bound to the vendor's signature with
+  defaults. Inside a run, `get_news` is served by the same vendor's
+  `get_news_feed`, whose signature matches for Yahoo and Alpha Vantage.
+- **Hashing and outages.** Every shared vendor method returns text or a `Feed`,
+  so the JSON content hash (which refuses NaN) cannot turn a good answer into a
+  failure. The Yahoo adapters raise on an empty or failed fetch rather than
+  return prose, so an outage is not reused as an answer.
+- **News provenance.** Alpha Vantage items and text are trimmed to the inclusive
+  window using UTC-aware times. A notice or non-feed body is unavailable. Yahoo
+  items carry the link and the UTC publication time.
+
+Low notes; no change proposed:
+
+- A coalesced waiter re-raises the owner's exception object and records the
+  shared outcome as its own acquisition. Each read's provenance is accurate from
+  that read's point of view.
+- `record_for` runs after `fetch`. If the entry expired in between and another
+  thread fetched again, the fetch time shown would be the newer one. That needs
+  an expiry within microseconds of the read.
+
+**Outside C04 (a C03 gap).** When the Jev extra is not installed but
+`TYPESAFE_API_KEY` is set, the Sentiment Analyst screens social posts through
+`post_screen.system_one`: raw HTTP, up to three attempts of 15 s with
+`time.sleep` backoff, on pool threads that do not copy the run's context. Those
+sends ignore Stop and the deadline, contrary to
+[ADR 0001](0001-bounded-execution-and-run-status.md). `jev.py` already copies the
+context for each request. The same fix, plus a control check and an
+interruptible wait in that retry loop, belongs with C03, test-first. Fixed
+the same day ([tests](../../tests/test_c03_post_screen.py)).
+
+The questions for the owner below remain open.
 
 ## Questions for the owner
 

@@ -111,6 +111,65 @@ def test_stale_future_or_undated_prices_are_withheld(monkeypatch, csv):
     assert "100" not in events[1]["text"]
 
 
+def test_a_cited_closing_price_traces_to_its_price_row(monkeypatch):
+    # The figure checks read "99,101.5" in a CSV row as one thousands-grouped
+    # number, so no price from a comma-separated window could ever be traced.
+    from tradingagents.dataflows import router
+    from tradingagents.dataflows.feed import Feed
+    from tradingagents.dataflows.vendors.india import store
+
+    monkeypatch.setattr(store, "open_existing", lambda *a: None)
+    csv = "Date,Open,High,Low,Close,Volume\n2026-10-14,99,101,98,100.0,1000\n2026-10-15,100,102,99,101.5,1200\n"
+    monkeypatch.setattr(router, "route_to_vendor", lambda tool, *a: csv if tool == "get_stock_data" else Feed(""))
+    events = []
+    acquire(events.append, {}, "AAPL", "2026-10-16")
+    prices = events[1]
+    assert prices["coverage"] == "available"
+    assert "Close" in prices["text"] and "1200" in prices["text"]
+    cited = {"observations": [{"text": "The latest close was 101.5.", "evidence_ids": ["E2"]}],
+             "gaps": [], "questions": []}
+    checked = validate_summary(cited, {"E2": prices["text"]})
+    assert checked["valid"]
+    assert checked["observations"][0]["figures"][0]["found"]
+    assert checked["gaps"] == []
+
+
+def test_generation_attempt_cap_is_a_provider_timeout(tmp_path):
+    def capped(target, args, **kwargs):
+        if target.__name__ == "synthesize":
+            raise TimeoutError("Quick phase reached its time limit.")
+        return _phase(target, args, **kwargs)
+
+    result = run_quick("AAPL", "2026-10-16", config={"results_dir": str(tmp_path)}, phase_runner=capped)
+    completion = result.completion
+    assert completion["state"] == "partial"
+    assert completion["stop_reason"] == "provider_error"
+    assert completion["provider_failure"]["error_class"] == "timeout"
+    assert completion["provider_failure"]["attempts"] == 1
+    assert "provider failure" in completion["detail"]
+
+
+def test_generation_cut_by_the_run_budget_is_the_deadline(tmp_path):
+    import time
+
+    from tradingagents.modes import mode_config
+    from tradingagents.run_control import RunControl
+
+    control = RunControl.from_config(mode_config({"research_mode": "quick"}))
+    control.deadline = time.monotonic() + 5.3  # leaves 0.3 s before the 5 s reserve
+
+    def slow(target, args, *, timeout, **kwargs):
+        if target.__name__ == "synthesize":
+            time.sleep(timeout + 0.05)
+            raise TimeoutError("Quick phase reached its time limit.")
+        return _phase(target, args, **kwargs)
+
+    result = run_quick("AAPL", "2026-10-16", config={"results_dir": str(tmp_path)}, control=control,
+                       phase_runner=slow)
+    assert result.completion["stop_reason"] == "deadline"
+    assert result.completion["provider_failure"] is None
+
+
 @pytest.mark.parametrize("provider,sdk_attempts", [("google", 1), ("openai", 0), ("anthropic", 0), ("azure", 0)])
 def test_synthesis_requests_no_sdk_retries_and_bounded_tokens(monkeypatch, provider, sdk_attempts):
     from tradingagents import llm_clients

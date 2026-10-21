@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import json
 import math
 from datetime import UTC, date, datetime, timedelta
@@ -92,13 +91,15 @@ def _prices(value, start, day):
             rows.append((stamp, row))
     if not rows or (day - max(stamp for stamp, _ in rows)).days > MAX_OHLCV_STALE_DAYS:
         return "DATA_UNAVAILABLE: Price data is missing or stale for the requested date."
-    out = io.StringIO()
-    writer = csv.DictWriter(out, reader.fieldnames, lineterminator="\n")
-    writer.writeheader()
-    writer.writerows(row for _, row in sorted(rows, key=lambda r: r[0])[-31:])
+    # Pipe-separated, not CSV: the figure checks read "99,101.5" as one
+    # thousands-grouped number, so no price in a CSV row could be traced.
+    names = reader.fieldnames
+    table = "\n".join(" | ".join(str(row.get(name) or "").replace("|", "/") for name in names)
+                      for _, row in sorted(rows, key=lambda r: r[0])[-31:])
     return _bounded_text(f"# Price window {start.isoformat()} through {day.isoformat()}; "
                          f"latest row {max(stamp for stamp, _ in rows).isoformat()}\n"
-                         "# Currency and price unit: unknown (not supplied by this source view).\n" + out.getvalue())
+                         "# Currency and price unit: unknown (not supplied by this source view).\n"
+                         + " | ".join(names) + "\n" + table + "\n")
 
 
 def _news(value, start, day, acquisitions):

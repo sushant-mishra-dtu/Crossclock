@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from tradingagents.completion import STOP_PROVIDER, describe_stop
 from tradingagents.modes import mode_config, mode_view
 from tradingagents.run_control import DeadlineExceeded, RunCancelled, RunControl, RunInterrupted
 
@@ -29,10 +30,25 @@ def _worker(send, target, args):
             raise ValueError("Quick worker result exceeds its transfer limit.")
         send.send(("result", result))
     except BaseException as exc:
-        # Never send provider error bodies/credentials to the coordinator or browser.
-        send.send(("error", type(exc).__name__))
+        # Never send provider error bodies/credentials to the coordinator or browser:
+        # only the error's type and its provider failure class (docs/adr/0001).
+        try:
+            from tradingagents.llm_clients.errors import provider_error_class
+
+            kind = provider_error_class(exc)
+        except Exception:
+            kind = None
+        send.send(("error", (type(exc).__name__, kind)))
     finally:
         send.close()
+
+
+class WorkerFailed(RuntimeError):
+    """A worker's error by type and provider failure class only, never its message."""
+
+    def __init__(self, error_type: str, provider_class: str | None = None):
+        super().__init__(f"Quick worker failed ({error_type}).")
+        self.error_type, self.provider_class = error_type, provider_class
 
 
 def bounded_call(target, args, *, timeout, cancel, on_event=None):
@@ -64,7 +80,7 @@ def bounded_call(target, args, *, timeout, cancel, on_event=None):
                 elif kind == "result":
                     return value
                 elif kind == "error":
-                    raise RuntimeError(f"Quick worker failed ({value}).")
+                    raise WorkerFailed(*value)
             elif not process.is_alive():
                 raise RuntimeError("Quick worker exited without a result.")
     finally:
@@ -220,7 +236,7 @@ def run_quick(ticker: str, trade_date: str, *, config=None, cancel=None, control
              "quick_gaps": [], "settings": settings, "usage": None, "cost": None,
              "generation_attempts": 0, "generation_sends": None,
              "transport_coverage": "worker sends unobserved", "source_usage": None}
-    reason, detail = None, None
+    reason, detail, provider_failure, generating = None, None, None, False
 
     def event(value):
         if cancel.is_set():
@@ -276,8 +292,10 @@ def run_quick(ticker: str, trade_date: str, *, config=None, cancel=None, control
         if work_cutoff <= time.monotonic():
             raise DeadlineExceeded("The Quick work budget is exhausted.")
         state["generation_attempts"] = 1
+        generating = True
         response = phase_runner(synthesize, (config, ticker.upper(), trade_date, "".join(packet)),
                                 timeout=min(40, work_cutoff - time.monotonic()), cancel=cancel, on_event=event)
+        generating = False
         control.check()
         state["usage"] = response.get("usage") or state["usage"]
         state["output_cap"] = response.get("output_cap", "requested; provider enforcement not independently verified")
@@ -295,9 +313,22 @@ def run_quick(ticker: str, trade_date: str, *, config=None, cancel=None, control
     except KeyboardInterrupt:
         cancel.set()
         reason, detail = "cancelled", "Quick research was stopped."
-    except (Exception, TimeoutError) as exc:
-        reason = "cancelled" if cancel.is_set() else "deadline" if isinstance(exc, TimeoutError) else "error"
+    except Exception as exc:
         detail = str(exc)
+        # The one generation attempt failed at the provider, or reached its own
+        # 40 s cap before the run's work cutoff: a provider failure, as in C03.
+        kind = (exc.provider_class if isinstance(exc, WorkerFailed) else
+                "timeout" if isinstance(exc, TimeoutError) and time.monotonic() < work_cutoff else None)
+        if cancel.is_set():
+            reason = "cancelled"
+        elif generating and kind:
+            reason = STOP_PROVIDER
+            provider_failure = {"provider": settings["provider"], "model": settings["model"],
+                                "error_class": kind, "attempts": 1, "waited_seconds": 0}
+            detail = describe_stop({"stop_reason": reason, "provider_failure": provider_failure,
+                                    "active_stages": ["Synthesis"]})
+        else:
+            reason = "deadline" if isinstance(exc, TimeoutError) else "error"
     if any(e["coverage"] != "available" for e in state["quick_sources"]):
         state["quick_gaps"].append("Some requested sources were unavailable or withheld.")
     state["quick_gaps"].append("Qualitative source support not checked; full decision checks are outside Quick scope.")
@@ -312,7 +343,7 @@ def run_quick(ticker: str, trade_date: str, *, config=None, cancel=None, control
         "stages": {"Acquisition": "done" if usable else "missing", "Synthesis": "done" if complete else "missing"},
         "missing": [] if complete else ["Synthesis"], "gaps": list(state["quick_gaps"]),
         "checks": {"source_support": "not_in_scope"},
-        "provider_failure": None,
+        "provider_failure": provider_failure,
     }
     path = _save(state, completion, config, settings, html_output=html) if save else None
     return QuickResult(state, completion, path, settings)

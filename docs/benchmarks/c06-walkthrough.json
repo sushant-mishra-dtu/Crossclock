@@ -1,0 +1,680 @@
+{
+  "task": "C06 Quick research mode, first slice (docs/adr/0004-research-modes-and-quick-path.md)",
+  "date": "2026-10-20",
+  "evidence_class": "fixture tested: the real web server and real spawned Quick workers, fixture price and news vendors installed inside each worker, a loopback fake OpenAI-compatible provider; no external network, no live provider or vendor",
+  "code": "feat/c06-verify on main 4ab64a3 (C06 build 9dbcb33) plus the two fixes in this change",
+  "browser": "Google Chrome (headless) driven by Playwright; keyboard only after each page load",
+  "viewports": [
+    "1440x900 dark",
+    "375x812 dark (mobile)",
+    "1440x900 light",
+    "375x812 light (mobile)"
+  ],
+  "runs_per_viewport": [
+    "complete Quick brief (provider answers after 4 s, so sourced facts render first)",
+    "Stop pressed while the provider holds the one synthesis request",
+    "provider HTTP 500 on the one synthesis request (1440x900 dark only)"
+  ],
+  "results_passed": 127,
+  "results_total": 127,
+  "results": [
+    {
+      "name": "dark-1440: requested theme renders",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: keyboard reaches the mode control",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: Deep is visibly planned and disabled",
+      "ok": true,
+      "detail": "{\"disabled\": true, \"label\": \"Deep — planned\"}"
+    },
+    {
+      "name": "dark-1440: keyboard cannot select unavailable Deep",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: Quick hides Standard-only controls",
+      "ok": true,
+      "detail": "{\"deepModel\": true, \"analysts\": true, \"portfolio\": true, \"checkpoints\": true, \"rounds\": true}"
+    },
+    {
+      "name": "dark-1440: scope, 60 s budget, exclusions and unknown ETA/cost shown before Run",
+      "ok": true,
+      "detail": "Quick brief · No investment decision produced\n\nLocal point-in-time facts, one 30-day price window and up to 8 dated headlines from the last 7 days, followed by one synthesis.\n\nNo social feeds, remote financial statements, filing retrieval, decision memory, rating or checkpoint resume. Missing local "
+    },
+    {
+      "name": "dark-1440: Quick setting survives a reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: sourced price fact rendered before the synthesis finished",
+      "ok": true,
+      "detail": "{\"browserOffsetMs\": 2033}"
+    },
+    {
+      "name": "dark-1440: finished live Quick shows no decision and no rating plate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: no usage metric reads a bare zero",
+      "ok": true,
+      "detail": "[\"7s\\nElapsed\", \"2/2\\nReports\", \"Unavailable\\nLLM calls\", \"Unavailable\\nTool calls\", \"70\\nTokens\"]"
+    },
+    {
+      "name": "dark-1440: live page has no horizontal overflow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: exactly one provider send, no tools, output cap at most 1,200",
+      "ok": true,
+      "detail": "{\"shownModel\": \"gpt-6-luna\", \"sends\": [{\"path\": \"/v1/chat/completions\", \"model\": \"gpt-6-luna\", \"at\": 1792484543.895051, \"max_tokens\": 1200, \"tools\": false, \"mode\": \"slow\"}]}"
+    },
+    {
+      "name": "dark-1440: job API and saved data deny decision eligibility",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: no Standard artifacts beside the Quick brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: saved Quick brief keeps its mode, no-decision label and facts",
+      "ok": true,
+      "detail": "AAPL · 2026-10-16\nQuick brief · No investment decision produced · saved 2026-10-20 13:52\nComplete with gaps: No local financial statements were available.; Some requested sources were unavailable or withheld.; Qualitative source support not checked; full decision checks are outside Quick scope.\nQuic"
+    },
+    {
+      "name": "dark-1440: saved brief has no rating plate or badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: saved brief opens on Brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: the cited close traces to its price row",
+      "ok": true,
+      "detail": "{\"figureButtons\": 1}"
+    },
+    {
+      "name": "dark-1440: saved report has no horizontal overflow",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "dark-1440: figure link opens the source drawer by keyboard with heading focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: source drawer is modal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: verified source text expands by keyboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: drawer fits the viewport",
+      "ok": true,
+      "detail": "{\"x\": 820, \"y\": 0, \"width\": 620, \"height\": 900}"
+    },
+    {
+      "name": "dark-1440: focus stays inside the modal drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: Escape returns focus to the figure link",
+      "ok": true,
+      "detail": "{\"id\": \"\", \"tag\": \"BUTTON\", \"text\": \"E2\", \"src\": \"E2\", \"figure\": \"101.5\", \"href\": null, \"classes\": \"chip sm b mono\"}"
+    },
+    {
+      "name": "dark-1440: downloaded Markdown is the Quick brief, without a trade decision",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: mode survives a saved-report reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: Stop saves a partial Quick result without a decision",
+      "ok": true,
+      "detail": "{\"status\": \"cancelled\", \"completion\": {\"state\": \"partial\", \"stopReason\": \"cancelled\", \"summary\": \"Quick research was stopped.\", \"gaps\": [\"Some requested sources were unavailable or withheld.\", \"Qualitative source support not checked; full decision checks are outside Quick scope.\", \"Quick research wa"
+    },
+    {
+      "name": "dark-1440: Stop keeps the finished acquisition phase",
+      "ok": true,
+      "detail": "{\"Acquisition\": \"completed\", \"Synthesis\": \"stopped\", \"Checks\": \"pending\"}"
+    },
+    {
+      "name": "dark-1440: the stopped run made one send and none after Stop",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "dark-1440: the saved partial keeps its facts and has no rating",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-1440: provider failure is labelled as one and named in words",
+      "ok": true,
+      "detail": "{\"state\": \"partial\", \"stopReason\": \"provider_error\", \"summary\": \"Stopped by a provider failure (a server error from openai gpt-6-luna after 1 attempt) while Synthesis was running.\", \"gaps\": [\"Some requested sources were unavailable or withheld.\", \"Qualitative source support not checked; full decisio"
+    },
+    {
+      "name": "dark-1440: provider failure made exactly one send",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "dark-1440: the provider's error body is never shown or saved",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: requested theme renders",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: keyboard reaches the mode control",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: Deep is visibly planned and disabled",
+      "ok": true,
+      "detail": "{\"disabled\": true, \"label\": \"Deep — planned\"}"
+    },
+    {
+      "name": "dark-375: keyboard cannot select unavailable Deep",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: Quick hides Standard-only controls",
+      "ok": true,
+      "detail": "{\"deepModel\": true, \"analysts\": true, \"portfolio\": true, \"checkpoints\": true, \"rounds\": true}"
+    },
+    {
+      "name": "dark-375: scope, 60 s budget, exclusions and unknown ETA/cost shown before Run",
+      "ok": true,
+      "detail": "Quick brief · No investment decision produced\n\nLocal point-in-time facts, one 30-day price window and up to 8 dated headlines from the last 7 days, followed by one synthesis.\n\nNo social feeds, remote financial statements, filing retrieval, decision memory, rating or checkpoint resume. Missing local "
+    },
+    {
+      "name": "dark-375: Quick setting survives a reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: sourced price fact rendered before the synthesis finished",
+      "ok": true,
+      "detail": "{\"browserOffsetMs\": 2030}"
+    },
+    {
+      "name": "dark-375: finished live Quick shows no decision and no rating plate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: no usage metric reads a bare zero",
+      "ok": true,
+      "detail": "[\"8s\\nElapsed\", \"2/2\\nReports\", \"Unavailable\\nLLM calls\", \"Unavailable\\nTool calls\", \"70\\nTokens\"]"
+    },
+    {
+      "name": "dark-375: live page has no horizontal overflow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: exactly one provider send, no tools, output cap at most 1,200",
+      "ok": true,
+      "detail": "{\"shownModel\": \"gpt-6-luna\", \"sends\": [{\"path\": \"/v1/chat/completions\", \"model\": \"gpt-6-luna\", \"at\": 1792484562.8383374, \"max_tokens\": 1200, \"tools\": false, \"mode\": \"slow\"}]}"
+    },
+    {
+      "name": "dark-375: job API and saved data deny decision eligibility",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: no Standard artifacts beside the Quick brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: saved Quick brief keeps its mode, no-decision label and facts",
+      "ok": true,
+      "detail": "AAPL · 2026-10-16\nQuick brief · No investment decision produced · saved 2026-10-20 13:52\nComplete with gaps: No local financial statements were available.; Some requested sources were unavailable or withheld.; Qualitative source support not checked; full decision checks are outside Quick scope.\nQuic"
+    },
+    {
+      "name": "dark-375: saved brief has no rating plate or badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: saved brief opens on Brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: the cited close traces to its price row",
+      "ok": true,
+      "detail": "{\"figureButtons\": 1}"
+    },
+    {
+      "name": "dark-375: saved report has no horizontal overflow",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "dark-375: figure link opens the source drawer by keyboard with heading focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: source drawer is modal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: verified source text expands by keyboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: drawer fits the viewport",
+      "ok": true,
+      "detail": "{\"x\": 0, \"y\": 0, \"width\": 375, \"height\": 812}"
+    },
+    {
+      "name": "dark-375: focus stays inside the modal drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: Escape returns focus to the figure link",
+      "ok": true,
+      "detail": "{\"id\": \"\", \"tag\": \"BUTTON\", \"text\": \"E2\", \"src\": \"E2\", \"figure\": \"101.5\", \"href\": null, \"classes\": \"chip sm b mono\"}"
+    },
+    {
+      "name": "dark-375: mode survives a saved-report reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dark-375: Stop saves a partial Quick result without a decision",
+      "ok": true,
+      "detail": "{\"status\": \"cancelled\", \"completion\": {\"state\": \"partial\", \"stopReason\": \"cancelled\", \"summary\": \"Quick research was stopped.\", \"gaps\": [\"Some requested sources were unavailable or withheld.\", \"Qualitative source support not checked; full decision checks are outside Quick scope.\", \"Quick research wa"
+    },
+    {
+      "name": "dark-375: Stop keeps the finished acquisition phase",
+      "ok": true,
+      "detail": "{\"Acquisition\": \"completed\", \"Synthesis\": \"stopped\", \"Checks\": \"pending\"}"
+    },
+    {
+      "name": "dark-375: the stopped run made one send and none after Stop",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "dark-375: the saved partial keeps its facts and has no rating",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: requested theme renders",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: keyboard reaches the mode control",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: Deep is visibly planned and disabled",
+      "ok": true,
+      "detail": "{\"disabled\": true, \"label\": \"Deep — planned\"}"
+    },
+    {
+      "name": "light-1440: keyboard cannot select unavailable Deep",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: Quick hides Standard-only controls",
+      "ok": true,
+      "detail": "{\"deepModel\": true, \"analysts\": true, \"portfolio\": true, \"checkpoints\": true, \"rounds\": true}"
+    },
+    {
+      "name": "light-1440: scope, 60 s budget, exclusions and unknown ETA/cost shown before Run",
+      "ok": true,
+      "detail": "Quick brief · No investment decision produced\n\nLocal point-in-time facts, one 30-day price window and up to 8 dated headlines from the last 7 days, followed by one synthesis.\n\nNo social feeds, remote financial statements, filing retrieval, decision memory, rating or checkpoint resume. Missing local "
+    },
+    {
+      "name": "light-1440: Quick setting survives a reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: sourced price fact rendered before the synthesis finished",
+      "ok": true,
+      "detail": "{\"browserOffsetMs\": 2030}"
+    },
+    {
+      "name": "light-1440: finished live Quick shows no decision and no rating plate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: no usage metric reads a bare zero",
+      "ok": true,
+      "detail": "[\"7s\\nElapsed\", \"2/2\\nReports\", \"Unavailable\\nLLM calls\", \"Unavailable\\nTool calls\", \"70\\nTokens\"]"
+    },
+    {
+      "name": "light-1440: live page has no horizontal overflow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: exactly one provider send, no tools, output cap at most 1,200",
+      "ok": true,
+      "detail": "{\"shownModel\": \"gpt-6-luna\", \"sends\": [{\"path\": \"/v1/chat/completions\", \"model\": \"gpt-6-luna\", \"at\": 1792484577.223403, \"max_tokens\": 1200, \"tools\": false, \"mode\": \"slow\"}]}"
+    },
+    {
+      "name": "light-1440: job API and saved data deny decision eligibility",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: no Standard artifacts beside the Quick brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: saved Quick brief keeps its mode, no-decision label and facts",
+      "ok": true,
+      "detail": "AAPL · 2026-10-16\nQuick brief · No investment decision produced · saved 2026-10-20 13:53\nComplete with gaps: No local financial statements were available.; Some requested sources were unavailable or withheld.; Qualitative source support not checked; full decision checks are outside Quick scope.\nQuic"
+    },
+    {
+      "name": "light-1440: saved brief has no rating plate or badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: saved brief opens on Brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: the cited close traces to its price row",
+      "ok": true,
+      "detail": "{\"figureButtons\": 1}"
+    },
+    {
+      "name": "light-1440: saved report has no horizontal overflow",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "light-1440: figure link opens the source drawer by keyboard with heading focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: source drawer is modal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: verified source text expands by keyboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: drawer fits the viewport",
+      "ok": true,
+      "detail": "{\"x\": 820, \"y\": 0, \"width\": 620, \"height\": 900}"
+    },
+    {
+      "name": "light-1440: focus stays inside the modal drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: Escape returns focus to the figure link",
+      "ok": true,
+      "detail": "{\"id\": \"\", \"tag\": \"BUTTON\", \"text\": \"E2\", \"src\": \"E2\", \"figure\": \"101.5\", \"href\": null, \"classes\": \"chip sm b mono\"}"
+    },
+    {
+      "name": "light-1440: mode survives a saved-report reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-1440: Stop saves a partial Quick result without a decision",
+      "ok": true,
+      "detail": "{\"status\": \"cancelled\", \"completion\": {\"state\": \"partial\", \"stopReason\": \"cancelled\", \"summary\": \"Quick research was stopped.\", \"gaps\": [\"Some requested sources were unavailable or withheld.\", \"Qualitative source support not checked; full decision checks are outside Quick scope.\", \"Quick research wa"
+    },
+    {
+      "name": "light-1440: Stop keeps the finished acquisition phase",
+      "ok": true,
+      "detail": "{\"Acquisition\": \"completed\", \"Synthesis\": \"stopped\", \"Checks\": \"pending\"}"
+    },
+    {
+      "name": "light-1440: the stopped run made one send and none after Stop",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "light-1440: the saved partial keeps its facts and has no rating",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: requested theme renders",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: keyboard reaches the mode control",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: Deep is visibly planned and disabled",
+      "ok": true,
+      "detail": "{\"disabled\": true, \"label\": \"Deep — planned\"}"
+    },
+    {
+      "name": "light-375: keyboard cannot select unavailable Deep",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: Quick hides Standard-only controls",
+      "ok": true,
+      "detail": "{\"deepModel\": true, \"analysts\": true, \"portfolio\": true, \"checkpoints\": true, \"rounds\": true}"
+    },
+    {
+      "name": "light-375: scope, 60 s budget, exclusions and unknown ETA/cost shown before Run",
+      "ok": true,
+      "detail": "Quick brief · No investment decision produced\n\nLocal point-in-time facts, one 30-day price window and up to 8 dated headlines from the last 7 days, followed by one synthesis.\n\nNo social feeds, remote financial statements, filing retrieval, decision memory, rating or checkpoint resume. Missing local "
+    },
+    {
+      "name": "light-375: Quick setting survives a reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: sourced price fact rendered before the synthesis finished",
+      "ok": true,
+      "detail": "{\"browserOffsetMs\": 2042}"
+    },
+    {
+      "name": "light-375: finished live Quick shows no decision and no rating plate",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: no usage metric reads a bare zero",
+      "ok": true,
+      "detail": "[\"8s\\nElapsed\", \"2/2\\nReports\", \"Unavailable\\nLLM calls\", \"Unavailable\\nTool calls\", \"70\\nTokens\"]"
+    },
+    {
+      "name": "light-375: live page has no horizontal overflow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: exactly one provider send, no tools, output cap at most 1,200",
+      "ok": true,
+      "detail": "{\"shownModel\": \"gpt-6-luna\", \"sends\": [{\"path\": \"/v1/chat/completions\", \"model\": \"gpt-6-luna\", \"at\": 1792484592.986276, \"max_tokens\": 1200, \"tools\": false, \"mode\": \"slow\"}]}"
+    },
+    {
+      "name": "light-375: job API and saved data deny decision eligibility",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: no Standard artifacts beside the Quick brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: saved Quick brief keeps its mode, no-decision label and facts",
+      "ok": true,
+      "detail": "AAPL · 2026-10-16\nQuick brief · No investment decision produced · saved 2026-10-20 13:53\nComplete with gaps: No local financial statements were available.; Some requested sources were unavailable or withheld.; Qualitative source support not checked; full decision checks are outside Quick scope.\nQuic"
+    },
+    {
+      "name": "light-375: saved brief has no rating plate or badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: saved brief opens on Brief",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: the cited close traces to its price row",
+      "ok": true,
+      "detail": "{\"figureButtons\": 1}"
+    },
+    {
+      "name": "light-375: saved report has no horizontal overflow",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "light-375: figure link opens the source drawer by keyboard with heading focus",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: source drawer is modal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: verified source text expands by keyboard",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: drawer fits the viewport",
+      "ok": true,
+      "detail": "{\"x\": 0, \"y\": 0, \"width\": 375, \"height\": 812}"
+    },
+    {
+      "name": "light-375: focus stays inside the modal drawer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: Escape returns focus to the figure link",
+      "ok": true,
+      "detail": "{\"id\": \"\", \"tag\": \"BUTTON\", \"text\": \"E2\", \"src\": \"E2\", \"figure\": \"101.5\", \"href\": null, \"classes\": \"chip sm b mono\"}"
+    },
+    {
+      "name": "light-375: mode survives a saved-report reload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "light-375: Stop saves a partial Quick result without a decision",
+      "ok": true,
+      "detail": "{\"status\": \"cancelled\", \"completion\": {\"state\": \"partial\", \"stopReason\": \"cancelled\", \"summary\": \"Quick research was stopped.\", \"gaps\": [\"Some requested sources were unavailable or withheld.\", \"Qualitative source support not checked; full decision checks are outside Quick scope.\", \"Quick research wa"
+    },
+    {
+      "name": "light-375: Stop keeps the finished acquisition phase",
+      "ok": true,
+      "detail": "{\"Acquisition\": \"completed\", \"Synthesis\": \"stopped\", \"Checks\": \"pending\"}"
+    },
+    {
+      "name": "light-375: the stopped run made one send and none after Stop",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "name": "light-375: the saved partial keeps its facts and has no rating",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source API returns the exact hash-verified text the report lists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "source API refuses a hash outside the report",
+      "ok": true,
+      "detail": "404"
+    },
+    {
+      "name": "no page errors or unexpected console errors",
+      "ok": true,
+      "detail": "[]"
+    }
+  ],
+  "provider_sends": {
+    "total": 9,
+    "per_run": "exactly one in each of the 9 runs",
+    "paths": [
+      "/v1/chat/completions"
+    ],
+    "models": [
+      "gpt-6-luna"
+    ],
+    "max_output_tokens": [
+      1200
+    ],
+    "tools_sent": false
+  },
+  "browser_first_fact_offset_ms": {
+    "dark-1440": 2033,
+    "dark-375": 2030,
+    "light-1440": 2030,
+    "light-375": 2042
+  },
+  "timing_caveat": "From the form submit to the first rendered price row, on fixture sources with no network and a local worker spawn. It is not a measured Quick latency and qualifies no target.",
+  "errors": [],
+  "harness": "Scratch only, outside the repository: launcher.py (env, fake provider, server), sitecustomize.py (socket guard, vendor fixtures), c06v_walkthrough.js"
+}
