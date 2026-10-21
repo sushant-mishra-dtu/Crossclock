@@ -629,6 +629,26 @@ def test_each_analysis_date_is_one_period_of_its_calls_mean_net_return(tmp_path)
 
 
 @pytest.mark.unit
+def test_the_periods_run_in_date_order_whatever_the_ratings_order(tmp_path):
+    # The Buy (2026-01-12) is scored before the Sell (2026-01-05): ratings go in log order.
+    summary = _summary(tmp_path, [
+        ("NVDA", "2026-01-12", "Rating: Buy\n\nx", (0.01, 0.005)),
+        ("AAPL", "2026-01-05", "Rating: Sell\n\nx", (-0.01, -0.002)),
+    ], cost_bps=0)
+    assert summary.periods == [("2026-01-05", pytest.approx(0.002)), ("2026-01-12", pytest.approx(0.005))]
+
+
+@pytest.mark.unit
+def test_the_window_is_the_settled_decisions_not_the_pending_ones(tmp_path):
+    summary = _summary(tmp_path, [
+        ("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.005)),
+        ("NVDA", "2026-01-12", "Rating: Buy\n\nx", (0.01, 0.005)),
+        ("NVDA", "2026-01-19", "Rating: Buy\n\nx", None),  # pending: no data scored yet
+    ], cost_bps=0)
+    assert summary.window == ("2026-01-05", "2026-01-12")
+
+
+@pytest.mark.unit
 def test_the_periods_use_each_markets_default_cost_like_the_net_figures(tmp_path):
     # RELIANCE.NS +0.5% at 30 bps nets +0.2%; NVDA +0.5% at 5 bps nets +0.45%; the date's mean +0.325%.
     summary = _summary(tmp_path, [
