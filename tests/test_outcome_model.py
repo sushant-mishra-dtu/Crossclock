@@ -421,4 +421,27 @@ def test_no_price_history_at_all_makes_the_price_models_the_base_rate_and_says_s
     assert ev.model("price only").holdout_loss == pytest.approx(ev.model("base rate").holdout_loss, abs=1e-6)
     assert ev.model("rating + price").holdout_loss == pytest.approx(ev.model("rating").holdout_loss, abs=1e-6)
     assert ev.price_missing == dict.fromkeys(PRICE, 64)
-    assert "no price history" in " ".join(ev.render().split()).lower()
+    text = " ".join(ev.render().split())
+    assert "No price history was found for any decision" in text
+    assert "Some decisions have no price history" not in text
+
+
+@pytest.mark.unit
+def test_price_only_has_no_rating_in_it_and_rating_plus_price_has():
+    """Decisions whose outcome follows the rating (Buy or Sell); the price columns are noise."""
+    rng = np.random.default_rng(9)
+    dates = [d for d in _days(20) for _ in range(5)]
+    n = len(dates)
+    rating = rng.choice([-1.0, 1.0], size=n)
+    alpha = rating / 50 + rng.normal(scale=0.005, size=n)
+    rows = [{"rating": float(r), "review": 0.0, "noise": float(rng.uniform())} for r in rating]
+    base = om.Dataset.from_rows(rows, ["rating", "review", "noise"], alpha, dates,
+                                [_later(d) for d in dates], [f"T{i} {d}" for i, d in enumerate(dates)])
+    ds = _with_price_columns(base, rng.normal(size=(n, len(PRICE))))
+
+    ev = om.evaluate(ds, {"noise": ("noise",)}, baseline=("rating", "review"), price=PRICE)
+
+    rating_model, price, both = (ev.model(n) for n in ("rating", "price only", "rating + price"))
+    assert price.holdout_loss > ev.model("base rate").holdout_loss - 0.05  # nothing to find in price
+    assert both.holdout_loss < price.holdout_loss - 0.2                    # the rating is in it
+    assert rating_model.holdout_loss < price.holdout_loss - 0.2

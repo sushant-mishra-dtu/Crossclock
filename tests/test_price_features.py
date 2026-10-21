@@ -69,6 +69,14 @@ def test_the_volatility_of_a_hand_series():
 
 
 @pytest.mark.unit
+def test_the_volatility_is_of_the_last_20_returns_only():
+    # 30 flat closes, then the alternating 21 above: the last 20 log returns are
+    # +-ln(1.1) as before; the flat stretch before them must not count.
+    bars = _bars([100] * 30 + [100 if i % 2 == 0 else 110 for i in range(21)])
+    assert price_features(bars, _after(bars))["vol_20d"] == pytest.approx(math.log(1.1))
+
+
+@pytest.mark.unit
 def test_no_bar_on_or_after_the_analysis_date_is_used():
     history = _bars(range(100, 350))     # 2025-01-01 to 2025-09-07
     day = "2025-08-09"                   # 220 bars before it, so every feature is there
