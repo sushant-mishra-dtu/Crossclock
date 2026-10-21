@@ -15,7 +15,12 @@ from datetime import date, timedelta
 
 import pytest
 
-from tradingagents.price_features import PRICE_COLUMNS, add_price_features, load_bars, price_features
+from tradingagents.price_features import (
+    PRICE_COLUMNS,
+    add_price_features,
+    load_bars,
+    price_features,
+)
 
 
 def _bars(closes, start=date(2025, 1, 1)):

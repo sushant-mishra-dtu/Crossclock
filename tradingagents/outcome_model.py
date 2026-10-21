@@ -2,7 +2,9 @@
 
 Fit 5 in docs/jev-use-cases.md. ``report_features`` turns each decision's
 reports into numeric columns; this fits an L2-regularised logistic regression of
-"alpha > 0" on them and asks whether they predict better than the rating alone.
+"alpha > 0" on them and asks whether they predict better than the rating alone,
+and, given price columns (``price_features``), better than models with no LLM in
+them: price only, and the rating plus price.
 The result is a probability, so it can sit next to the rating as a calibrated
 signal, but only once it has beaten the rating on decisions it never saw. Each
 model is scored by log loss and by the Brier score, and the full model's
@@ -258,6 +260,8 @@ class Evaluation:
     worst: list[tuple[str, float, float]] = field(default_factory=list)  # label, p, alpha
     # The full model's held-out predictions by bin: low, high, count, mean p, share that beat.
     reliability: list[tuple[float, float, int, float, float]] = field(default_factory=list)
+    price_columns: list[str] = field(default_factory=list)   # the no-LLM baseline's columns, if any
+    price_missing: dict[str, int] = field(default_factory=dict)  # column -> decisions without it
 
     def model(self, name: str) -> ModelScore:
         return next(m for m in self.models if m.name == name)
@@ -283,6 +287,19 @@ class Evaluation:
                 line += (f"; held-out alpha {m.favoured[0]:+.2%} (n={m.favoured[1]}) where it "
                          f"favours the stock vs {m.rest[0]:+.2%} (n={m.rest[1]}) elsewhere")
             lines.append(line)
+        if self.price_columns:
+            lines += ["", f"Price only and rating + price use no LLM: {', '.join(self.price_columns)}, "
+                      "computed from the daily closes before each analysis date (returns over 20, 60 "
+                      "and 120 bars, the 20-day volatility of log returns, the distance to the 50- and "
+                      "200-day averages). A gain from the Jev features counts only if it beats them too."]
+            if all(self.price_missing.get(c) == self.decisions for c in self.price_columns):
+                lines.append("No price history was found for any decision, so the price models are "
+                             "the base rate and the rating.")
+            elif self.price_missing:
+                missing = ", ".join(f"{c} missing for {n} of {self.decisions} decisions"
+                                    for c, n in self.price_missing.items())
+                lines.append(f"Some decisions have no price history, or too little of it (each gap "
+                             f"is filled with its training mean): {missing}.")
         if self.reliability:
             lines += ["", f"Reliability of {self.models[-1].name} on the held-out dates, by "
                       "predicted P (empty bins left out); a calibrated model's share that beat "
@@ -317,11 +334,13 @@ def _alpha_split(alpha: np.ndarray, p: np.ndarray, base: float):
 
 
 def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequence[str],
-             holdout: float = 0.25) -> Evaluation:
+             holdout: float = 0.25, price: Sequence[str] = ()) -> Evaluation:
     """Score the base rate, the baseline columns, and baseline plus every question.
 
-    The L2 penalty of each model is chosen by walk-forward cross-validation on
-    the dev dates, and each model is then scored once on the held-out dates.
+    With ``price`` columns, two models with no LLM in them are scored as well:
+    price only, and the baseline plus price. The L2 penalty of each model is
+    chosen by walk-forward cross-validation on the dev dates, and each model is
+    then scored once on the held-out dates.
     """
     check_size(ds.dates)
     dev, train, test = holdout_split(ds.dates, ds.resolved, holdout)
@@ -335,9 +354,13 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
     base_cols = ds.indices(baseline)
     all_cols = base_cols + ds.indices([c for cols in questions.values() for c in cols])
     base_rate = float(ds.y[train].mean())
+    price_cols = ds.indices(price)
+    specs = [("base rate", []), ("rating", base_cols)]
+    if price_cols:
+        specs += [("price only", price_cols), ("rating + price", base_cols + price_cols)]
     models = []
-    for name, cols in (("base rate", []), ("rating", base_cols),
-                       ("rating + Jev features", all_cols)):
+    # The full model stays last: its predictions and penalty are read below.
+    for name, cols in (*specs, ("rating + Jev features", all_cols)):
         grid = L2_GRID if cols else (1.0,)
         l2, cv, oof = min(((l2, *cross_validate(ds, cols, folds, l2)) for l2 in grid),
                           key=lambda fit: fit[1])
@@ -372,4 +395,7 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
         decisions=len(ds.y), dates=len(set(ds.dates)), holdout_dates=(min(held), max(held)),
         holdout_rows=len(test), train_rows=len(train), base_rate=base_rate,
         models=models, questions=scored, worst=worst, reliability=calibration,
+        price_columns=list(price),
+        price_missing={c: n for c, i in zip(price, price_cols, strict=True)
+                       if (n := int(np.isnan(ds.X[:, i]).sum()))},
     )
