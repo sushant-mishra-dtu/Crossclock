@@ -15,6 +15,8 @@ import cli.main as m
 @pytest.fixture
 def runner(monkeypatch):
     monkeypatch.setattr(m, "run_analysis", lambda **kw: calls.append(("analysis", kw)))
+    # The stubbed summaries below are not real ones, so they are not added to the trial ledger.
+    monkeypatch.setattr(m, "record_summary", lambda *a, **kw: None)
     calls.clear()
     return CliRunner()
 
