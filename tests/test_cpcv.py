@@ -173,8 +173,10 @@ def test_pbo_of_noise_is_a_half_and_of_one_real_signal_is_zero():
     assert om.probability_of_overfitting(noise_in, noise_out) == pytest.approx(0.5, abs=0.04)
 
     signal_in, signal_out = noise_in.copy(), noise_out.copy()
-    signal_in[:, 3] -= 5     # configuration 3 has the lowest loss in and out of sample
-    signal_out[:, 3] -= 5
+    # Configuration 3 has the lowest loss in and out of sample. 10 below, not 5: another
+    # standard normal beats a 5-lower one with p ~ 2e-4 per pair, which 2,000 splits do find.
+    signal_in[:, 3] -= 10
+    signal_out[:, 3] -= 10
     assert om.probability_of_overfitting(signal_in, signal_out) == 0.0
 
 
@@ -206,9 +208,18 @@ def _pbo_of_single_columns(ds):
 
 
 @pytest.mark.unit
-def test_pbo_over_fitted_noise_configurations_is_near_a_half():
-    # Eight configurations of equal size, each one noise column: the in-sample best is luck.
-    assert 0.2 <= _pbo_of_single_columns(_noise_columns()) <= 0.8
+def test_pbo_over_fitted_noise_configurations_is_no_better_than_chance():
+    """Eight configurations of equal size, each one noise column. Choosing among them in
+    sample is no better than chance: PBO is at least about 0.5.
+
+    It is not near 0.5 as for fixed strategies (the matrix test above). With fitted models
+    the configuration that fits its training rows best is the one that learned the most
+    noise, which costs it out of sample, so its rank there is lower than chance. Over seeds
+    0-199 single seeds ranged 0.13-1.00 (mean 0.75); the mean of each run of 10 seeds was
+    0.57-0.83, so the test takes the mean of seeds 0-9 (0.75).
+    """
+    pbo = [_pbo_of_single_columns(_noise_columns(seed=seed)) for seed in range(10)]
+    assert np.mean(pbo) >= 0.5
 
 
 @pytest.mark.unit

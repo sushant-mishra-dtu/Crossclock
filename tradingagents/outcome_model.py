@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import combinations
+from math import comb
 
 import numpy as np
 
@@ -34,6 +36,13 @@ MIN_DATES = 6
 MIN_TRAIN = 10
 N_FOLDS = 4
 L2_GRID = (0.3, 1.0, 3.0, 10.0, 30.0)
+# Combinatorial purged CV: the dev dates in N_GROUPS blocks, every K_TEST of them a
+# test set. A decision starting within EMBARGO_DAYS after a test block's last outcome
+# does not train: one step of the usual weekly grid, whose reports were written
+# knowing the test block's prices.
+N_GROUPS = 6
+K_TEST = 2
+EMBARGO_DAYS = 7
 # A question whose columns barely move across decisions cannot explain outcomes
 # (the cookbook's cut-off, on each column's own scale).
 FLAT_SD = 0.05
@@ -224,6 +233,112 @@ def cross_validate(ds: Dataset, cols: Sequence[int], folds, l2: float):
 
 
 # ---------------------------------------------------------------------------
+# Combinatorial purged CV and the probability of backtest overfitting
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Split:
+    train: np.ndarray
+    test: np.ndarray
+    groups: tuple[int, ...]   # the test blocks
+    test_blocks: np.ndarray   # the block of each test row
+
+
+def combinatorial_purged_splits(dates: Sequence[str], resolved: Sequence[str], rows: np.ndarray,
+                                n_groups: int = N_GROUPS, k_test: int = K_TEST,
+                                embargo_days: int = EMBARGO_DAYS) -> list[Split]:
+    """Every choice of ``k_test`` of ``n_groups`` blocks of dates as the test set
+    (López de Prado, Advances in Financial Machine Learning, ch. 12).
+
+    The distinct dates of ``rows`` are cut into consecutive blocks. A row trains
+    unless its interval, from its analysis date to its resolution date, overlaps a
+    test block's window: from the block's first analysis date to its last
+    resolution date, plus ``embargo_days``. Rows after a test block may train,
+    unlike in ``walk_forward``, so the purge covers both sides.
+    """
+    rows = np.asarray(rows)
+    start = np.asarray(dates, dtype="datetime64[D]")[rows]
+    end = np.asarray(resolved, dtype="datetime64[D]")[rows]
+    days = np.unique(start)
+    if len(days) < n_groups:
+        raise ValueError(f"{n_groups} blocks need at least {n_groups} dates, got {len(days)}")
+    block_of = np.zeros(len(rows), dtype=int)
+    for g, block in enumerate(np.array_split(days, n_groups)):
+        block_of[np.isin(start, block)] = g
+    embargo = np.timedelta64(embargo_days, "D")
+    splits = []
+    for chosen in combinations(range(n_groups), k_test):
+        in_test = np.isin(block_of, chosen)
+        clear = ~in_test
+        for g in chosen:
+            low, high = start[block_of == g].min(), end[block_of == g].max() + embargo
+            clear &= (start > high) | (end < low)
+        splits.append(Split(rows[clear], rows[in_test], chosen, block_of[in_test]))
+    return splits
+
+
+@dataclass
+class CpcvFit:
+    in_sample: np.ndarray       # per split: log loss on the training rows the model was fitted to
+    out_of_sample: np.ndarray   # per split: log loss on its test rows
+    predictions: list[np.ndarray]  # per split: P for its test rows
+
+
+def cpcv_fit(ds: Dataset, splits: Sequence[Split], cols: Sequence[int], l2: float) -> CpcvFit:
+    """Fit one configuration on each split's training rows and score both sides."""
+    in_sample, out_of_sample, predictions = [], [], []
+    for s in splits:
+        model = fit_logistic(ds.X[np.ix_(s.train, cols)], ds.y[s.train], l2)
+        p = model.predict(ds.X[np.ix_(s.test, cols)])
+        in_sample.append(log_loss(ds.y[s.train], model.predict(ds.X[np.ix_(s.train, cols)])))
+        out_of_sample.append(log_loss(ds.y[s.test], p))
+        predictions.append(p)
+    return CpcvFit(np.array(in_sample), np.array(out_of_sample), predictions)
+
+
+def backtest_paths(splits: Sequence[Split], predictions: Sequence[np.ndarray], n_rows: int) -> np.ndarray:
+    """Paths x rows of out-of-sample predictions, NaN where a path has none.
+
+    The j-th split (in order) that tests a block gives that block's predictions to
+    path j, so with every split each path predicts every row once: C(n - 1, k - 1)
+    paths for n blocks taken k at a time.
+    """
+    seen: dict[int, int] = {}
+    pieces = []
+    for s, p in zip(splits, predictions, strict=True):
+        for g in s.groups:
+            path = seen[g] = seen.get(g, -1) + 1
+            own = s.test_blocks == g
+            pieces.append((path, s.test[own], p[own]))
+    paths = np.full((max(seen.values(), default=-1) + 1, n_rows), np.nan)
+    for path, rows, p in pieces:
+        paths[path, rows] = p
+    return paths
+
+
+def probability_of_overfitting(in_sample, out_of_sample) -> float:
+    """PBO by CSCV (Bailey, Borwein, López de Prado and Zhu, 2014), from losses
+    (lower is better), splits x configurations.
+
+    In each split the configuration with the lowest in-sample loss is ranked out
+    of sample, 1 the worst to N the best (ties share their ranks); its relative
+    rank w = rank / (N + 1) overfits when logit(w) <= 0, i.e. w <= 0.5. PBO is
+    the share of splits where it does.
+    """
+    in_sample, out_of_sample = np.asarray(in_sample, dtype=float), np.asarray(out_of_sample, dtype=float)
+    n_configs = in_sample.shape[1]
+    if n_configs < 2 or not len(in_sample):
+        raise ValueError("the probability of backtest overfitting needs two configurations and a split")
+    overfit = 0
+    for ins, oos in zip(in_sample, out_of_sample, strict=True):
+        best = int(np.argmin(ins))
+        rank = 1 + np.sum(oos > oos[best]) + (np.sum(oos == oos[best]) - 1) / 2
+        overfit += rank / (n_configs + 1) <= 0.5
+    return float(overfit / len(in_sample))
+
+
+# ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
 
@@ -238,6 +353,21 @@ class ModelScore:
     holdout_brier: float
     favoured: tuple[float, int] | None = None   # mean held-out alpha and count, p above base rate
     rest: tuple[float, int] | None = None
+    # Combinatorial purged CV at the model's L2, over its backtest paths: median, 10th, 90th percentile.
+    paths_loss: tuple[float, float, float] | None = None
+    paths_brier: tuple[float, float, float] | None = None
+
+
+@dataclass
+class Combinatorial:
+    n_groups: int
+    k_test: int
+    embargo_days: int
+    splits: int          # C(n_groups, k_test)
+    used: int            # the splits with enough training decisions of both outcomes
+    paths: int
+    configurations: int  # every model at every L2 of its grid
+    pbo: float | None    # None with under two splits or configurations
 
 
 @dataclass
@@ -262,6 +392,8 @@ class Evaluation:
     reliability: list[tuple[float, float, int, float, float]] = field(default_factory=list)
     price_columns: list[str] = field(default_factory=list)   # the no-LLM baseline's columns, if any
     price_missing: dict[str, int] = field(default_factory=dict)  # column -> decisions without it
+    cpcv: Combinatorial | None = None   # None when the dev dates are too few to cut into blocks
+    dev_dates: int = 0
 
     def model(self, name: str) -> ModelScore:
         return next(m for m in self.models if m.name == name)
@@ -300,6 +432,29 @@ class Evaluation:
                                     for c, n in self.price_missing.items())
                 lines.append(f"Some decisions have no price history, or too little of it (each gap "
                              f"is filled with its training mean): {missing}.")
+        if self.cpcv:
+            c = self.cpcv
+            used = "" if c.used == c.splits else (f", {c.used} of them with enough training "
+                                                  "decisions of both outcomes")
+            lines += ["", f"Combinatorial purged CV on the dev dates: {c.n_groups} blocks of dates, every "
+                      f"{c.k_test} of them a test set ({c.splits} splits{used}; {c.paths} backtest paths). "
+                      "A training decision whose outcome window touches a test block, or that starts "
+                      f"within {c.embargo_days} days after one, is left out. Out-of-sample scores per "
+                      "path at each model's L2, median [10th to 90th percentile]:"]
+            for m in self.models:
+                if m.paths_loss and m.paths_brier:
+                    (loss, low, high), (b, b_low, b_high) = m.paths_loss, m.paths_brier
+                    lines.append(f"- {m.name}: log loss {loss:.3f} [{low:.3f} to {high:.3f}], "
+                                 f"Brier {b:.3f} [{b_low:.3f} to {b_high:.3f}]")
+            if c.pbo is not None:
+                lines.append(f"Probability of backtest overfitting: {c.pbo:.2f}, over the {c.configurations} "
+                             "model-and-L2 configurations: the share of the splits where the one with the "
+                             "best in-sample log loss ranks in the bottom half out of sample (CSCV; Bailey, "
+                             "Borwein, López de Prado and Zhu, 2014). Near 0 the in-sample choice holds up; "
+                             "near 0.5 or above it is no better than chance.")
+        elif self.dev_dates:
+            lines += ["", f"Combinatorial purged CV needs at least {N_GROUPS} dev dates; there are "
+                      f"{self.dev_dates}, so it was skipped."]
         if self.reliability:
             lines += ["", f"Reliability of {self.models[-1].name} on the held-out dates, by "
                       "predicted P (empty bins left out); a calibrated model's share that beat "
@@ -358,12 +513,13 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
     specs = [("base rate", []), ("rating", base_cols)]
     if price_cols:
         specs += [("price only", price_cols), ("rating + price", base_cols + price_cols)]
-    models = []
+    models, fitted = [], []
     # The full model stays last: its predictions and penalty are read below.
     for name, cols in (*specs, ("rating + Jev features", all_cols)):
         grid = L2_GRID if cols else (1.0,)
         l2, cv, oof = min(((l2, *cross_validate(ds, cols, folds, l2)) for l2 in grid),
                           key=lambda fit: fit[1])
+        fitted.append((cols, grid, l2))
         model = fit_logistic(ds.X[np.ix_(train, cols)], ds.y[train], l2)
         p = model.predict(ds.X[np.ix_(test, cols)])
         favoured, rest = _alpha_split(ds.alpha[test], p, base_rate) if cols else (None, None)
@@ -390,6 +546,9 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
     worst = [(ds.labels[i], float(oof[i]), float(ds.alpha[i]))
              for _, i in sorted(row_loss, reverse=True)[:WORST_SHOWN]]
 
+    dev_dates = len({ds.dates[i] for i in dev})
+    cpcv = _combinatorial(ds, dev, fitted, models) if dev_dates >= N_GROUPS else None
+
     held = [ds.dates[i] for i in test]
     return Evaluation(
         decisions=len(ds.y), dates=len(set(ds.dates)), holdout_dates=(min(held), max(held)),
@@ -398,4 +557,40 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
         price_columns=list(price),
         price_missing={c: n for c, i in zip(price, price_cols, strict=True)
                        if (n := int(np.isnan(ds.X[:, i]).sum()))},
+        cpcv=cpcv, dev_dates=dev_dates,
     )
+
+
+def _spread(values: Sequence[float]) -> tuple[float, float, float] | None:
+    """Median, 10th and 90th percentile, or None for no values."""
+    if not len(values):
+        return None
+    median, low, high = np.percentile(values, [50, 10, 90])
+    return float(median), float(low), float(high)
+
+
+def _combinatorial(ds: Dataset, dev: np.ndarray, fitted, models: list[ModelScore]) -> Combinatorial:
+    """Combinatorial purged CV of the dev rows: each model's backtest-path scores at
+    the L2 walk-forward chose for it (set on its ModelScore), and the PBO of every
+    model at every L2 of its grid. Splits too small to fit are left out."""
+    all_splits = combinatorial_purged_splits(ds.dates, ds.resolved, dev)
+    splits = [s for s in all_splits if _trainable(ds.y[s.train])]
+    in_sample, out_of_sample = [], []
+    for (cols, grid, chosen), model in zip(fitted, models, strict=True):
+        for l2 in grid:
+            fit = cpcv_fit(ds, splits, cols, l2)
+            in_sample.append(fit.in_sample)
+            out_of_sample.append(fit.out_of_sample)
+            if l2 != chosen:
+                continue
+            losses, briers = [], []
+            for path in backtest_paths(splits, fit.predictions, len(ds.y)):
+                scored = ~np.isnan(path)
+                if scored.any():
+                    losses.append(log_loss(ds.y[scored], path[scored]))
+                    briers.append(brier(ds.y[scored], path[scored]))
+            model.paths_loss, model.paths_brier = _spread(losses), _spread(briers)
+    pbo = (probability_of_overfitting(np.column_stack(in_sample), np.column_stack(out_of_sample))
+           if splits and len(in_sample) > 1 else None)
+    return Combinatorial(N_GROUPS, K_TEST, EMBARGO_DAYS, splits=len(all_splits), used=len(splits),
+                         paths=comb(N_GROUPS - 1, K_TEST - 1), configurations=len(in_sample), pbo=pbo)
