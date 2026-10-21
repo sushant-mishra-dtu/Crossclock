@@ -7,7 +7,7 @@ from cli.display import console
 from cli.models import AnalystType, AssetType
 from cli.prompts import filter_analysts_for_asset_type, parse_analysts
 from cli.run import run_analysis
-from tradingagents.backtest import iter_grid, run_backtest, summarize
+from tradingagents.backtest import check_cost_bps, iter_grid, run_backtest, summarize
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.portfolio import load_portfolio
@@ -123,10 +123,15 @@ def backtest(
     run_id: str = typer.Option(
         None, "--run-id", help="Continue an earlier sweep: its cells are skipped and its log reused"
     ),
+    cost_bps: float = typer.Option(
+        None, "--cost-bps", help="Round-trip cost taken off each directional call, in basis points; "
+        "omit for each market's default: 30 for .NS/.BO, 5 for US stocks"
+    ),
 ):
     """Score past decisions over a grid of tickers and dates."""
 
     try:
+        check_cost_bps(cost_bps)  # before the sweep, which is the slow and paid part
         dates = iter_grid(start, end, every)
         book = load_portfolio(portfolio) if portfolio else None
         kind = AssetType(asset_type.strip().lower())
@@ -154,7 +159,7 @@ def backtest(
     except Exception as exc:  # a missing key or an unknown analyst is a setup error
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from None
-    console.print(summarize(result).render())
+    console.print(summarize(result, cost_bps=cost_bps).render())
     console.print(f"\nRan {result.cells_run} cells, skipped {result.skipped}. Log: {result.log_path}")
     console.print(f"Continue or settle this sweep: --run-id {result.run_id}")
     for ticker, date, reason in result.failures:

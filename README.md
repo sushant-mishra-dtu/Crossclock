@@ -604,6 +604,8 @@ tradingagents backtest NVDA,AAPL --start 2026-06-01 --end 2026-08-01 --every 7
 
 Each cell is scored on realized alpha against the instrument's regional benchmark, grouped by rating. Your own memory log is never written to, and re-running the same grid with `run_id=result.run_id` skips the cells that already ran, so an interrupted sweep continues where it stopped.
 
+Each directional call is also scored net of one round trip, taken off its alpha rather than simulated as a fill: by default 30 bps for NSE/BSE delivery (`.NS`, `.BO`) and 5 bps for US stocks, with the higher figure standing in for any other market. `--cost-bps` (or `summarize(result, cost_bps=...)`) sets one figure for every call, and `--cost-bps 0` scores the calls gross. A Sell is treated as avoiding the stock at the same cost. The summary prints the figures it used and warns below 10 bps, which is under the log's precision of 0.1 percentage point. How each default is built up (STT, exchange charges, stamp duty, GST, spread), with sources, is written next to the figures in `tradingagents/backtest.py`.
+
 ### Learning from the reports (Jev)
 
 A backtest also keeps every cell's reports, so they can be tested against the outcomes. With the `jev` extra and `TYPESAFE_API_KEY` set:

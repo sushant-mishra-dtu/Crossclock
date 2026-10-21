@@ -960,7 +960,9 @@ def backtest_detail(run: str) -> dict:
         "run": run, "resolved": summary.resolved, "pending": summary.pending,
         "unscored": summary.unscored, "holding": summary.holding,
         "byRating": [{"rating": r, "count": s.count, "hitRate": s.hit_rate,
-                      "meanAlpha": s.mean_alpha} for r, s in scores],
+                      "meanAlpha": s.mean_alpha, "netHitRate": s.net_hit_rate,
+                      "meanNet": s.mean_net} for r, s in scores],
+        "costNotes": summary.cost_lines(),
         "cells": list(reversed(load_decisions(log_path))),
     }
 

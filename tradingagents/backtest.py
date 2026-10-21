@@ -11,12 +11,14 @@ must not grow one. Turning a rating into a filled order needs a quantity, a fill
 price and a cash ledger, none of which the system has; inventing them here would
 put an execution model behind an evaluation tool. Cells are therefore
 independent, and a portfolio, when given, is the same standing book for every
-cell rather than a position carried forward.
+cell rather than a position carried forward. Trading costs follow the same rule:
+one round trip is taken off each directional call's alpha, with no fill behind it.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -24,7 +26,7 @@ from pathlib import Path
 
 from tradingagents.agents.rating import RATING_REVIEW
 from tradingagents.dataflows.date_window import get_current_date
-from tradingagents.dataflows.symbols import safe_ticker_component
+from tradingagents.dataflows.symbols import crypto_base, safe_ticker_component
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.memory import TradingMemoryLog
 from tradingagents.run_control import DeadlineExceeded, RunCancelled
@@ -91,12 +93,74 @@ class BacktestResult:
 # Hold claims no direction, so nothing about alpha proves it right or wrong.
 _DIRECTION = {"Buy": 1, "Overweight": 1, "Hold": 0, "Underweight": -1, "Sell": -1}
 
+# One round trip (a buy and the sale that closes it) in basis points of the value
+# traded, by the market a ticker trades in.
+#
+# NSE/BSE delivery, 30 bps. Charges on a buy and a sale of equal value, at the
+# rates of Zerodha's schedule (zerodha.com/charges, read 2026-10-20):
+#   STT, 0.1% on the buy and 0.1% on the sale (Finance (No. 2) Act 2004;
+#     Budget 2026 raised only the F&O rates)                             20.0
+#   exchange transaction charge, NSE 0.00307% a side (BSE 0.00375%: 0.75)  0.6
+#   SEBI turnover fee, Rs 10 a crore (0.0001%) a side                     0.02
+#   stamp duty, 0.015% on the buy only (Indian Stamp Act, from July 2020)  1.5
+#   GST, 18% of the exchange charge and SEBI fee (no delivery brokerage)   0.1
+#   statutory charges                                                    22.2
+#   spread and impact, about 4 bps a side on a liquid large cap
+#     (an assumption, not a measurement)                                  7.8
+# Left out: the flat depository charge on each sale (Rs 15.34 a scrip: 1.5 bps
+# of a Rs 1 lakh sale, 15 bps of Rs 10,000) and full-service brokerage.
+#
+# US stocks, 5 bps: no commission at the main retail brokers; on the sale the
+# SEC's Section 31 fee, $20.60 a million from 4 April 2026 (0.2 bps; SEC fee
+# rate advisory 2026-2), and FINRA's trading activity fee, $0.000195 a share
+# capped at $9.79 (under 0.1 bps at usual prices); the rest is spread and
+# impact, about 2.4 bps a side on a liquid large cap (an assumption).
+#
+# No figure was researched for other markets or crypto, so they take the
+# higher default rather than an optimistic one; a cost given to summarize()
+# (the CLI's --cost-bps) replaces every default.
+INDIA_DELIVERY_COST_BPS = 30.0
+US_STOCK_COST_BPS = 5.0
+
+# The log keeps alpha to 0.1 of a percentage point, so it cannot resolve a smaller cost.
+_LOG_PRECISION_BPS = 10
+
+
+def _cost_market(ticker: str) -> tuple[str, float]:
+    """The market whose default cost a ticker pays, by its suffix, and that cost."""
+    symbol = ticker.strip().upper()
+    if symbol.endswith((".NS", ".BO")):
+        return "NSE/BSE delivery", INDIA_DELIVERY_COST_BPS
+    if "." not in symbol and crypto_base(symbol) is None:
+        return "US stocks", US_STOCK_COST_BPS
+    return "other markets (no figure researched, so the higher default)", INDIA_DELIVERY_COST_BPS
+
+
+def default_cost_bps(ticker: str) -> float:
+    """Round-trip cost in basis points for a ticker's market: 30 for NSE/BSE
+    delivery (``.NS``, ``.BO``), 5 for US stocks (no suffix), and 30 for any
+    other market or crypto."""
+    return _cost_market(ticker)[1]
+
+
+def check_cost_bps(cost_bps: float | None) -> None:
+    """Refuse a cost that is negative or not a number; None means each market's default."""
+    if cost_bps is not None and not (math.isfinite(cost_bps) and cost_bps >= 0):
+        raise ValueError(f"the cost must be a finite number of basis points, 0 or more; got {cost_bps}")
+
+
+def _bps(value: float) -> str:
+    return f"{value:g} bps"
+
 
 @dataclass
 class RatingScore:
     count: int
     hit_rate: float | None
     mean_alpha: float
+    # Net of one round trip, in the call's own direction; None for Hold.
+    net_hit_rate: float | None = None
+    mean_net: float | None = None
 
 
 @dataclass
@@ -106,6 +170,8 @@ class BacktestSummary:
     by_rating: dict[str, RatingScore]
     unscored: int = 0
     holding: str = ""
+    cost_bps: float | None = None  # one figure for every call; None: each market's default
+    costs: dict[str, float] = field(default_factory=dict)  # market -> bps taken off its calls
 
     def render(self) -> str:
         lines = [f"Resolved cells: {self.resolved} · pending: {self.pending}"
@@ -113,9 +179,11 @@ class BacktestSummary:
         for rating, score in self.by_rating.items():
             called = (f"called the direction {score.hit_rate:.0%}"
                       if score.hit_rate is not None else "no direction claimed")
+            net = (f"; after costs right {score.net_hit_rate:.0%}, mean net {score.mean_net:+.2%}"
+                   if score.mean_net is not None else "")
             lines.append(
                 f"- {rating}: n={score.count}, {called}, "
-                f"mean alpha {score.mean_alpha:+.2%} vs the benchmark"
+                f"mean alpha {score.mean_alpha:+.2%} vs the benchmark{net}"
             )
         lines.append("")
         if self.pending:
@@ -125,7 +193,27 @@ class BacktestSummary:
             "One model sampling per cell, and text feeds are not archived, so "
             "these figures are indicative rather than repeatable."
         )
+        lines.extend(self.cost_lines())
         return "\n".join(lines)
+
+    def cost_lines(self) -> list[str]:
+        """What the net figures took off each call; empty when no directional call is scored."""
+        if not self.costs:
+            return []
+        if self.cost_bps is not None:
+            used = f"{_bps(self.cost_bps)} round trip on every directional call, as given"
+        else:
+            used = (", ".join(f"{_bps(bps)} for {market}" for market, bps in self.costs.items())
+                    + ", a round trip each (the default for each ticker's market; --cost-bps sets one figure)")
+        lines = [f"Costs: {used}. Net is a call's alpha in its own direction less the cost: "
+                 "one round trip per directional call, Sell treated as avoiding the stock "
+                 "at the same cost; Hold claims no direction and is not charged."]
+        low = sorted({bps for bps in self.costs.values() if 0 < bps < _LOG_PRECISION_BPS})
+        if low:
+            lines.append(f"Warning: {' and '.join(_bps(bps) for bps in low)} is under the log's "
+                         "precision (alpha is kept to 0.1 of a percentage point, 10 bps), so the "
+                         "net figures cannot resolve it.")
+        return lines
 
 
 def run_backtest(
@@ -202,8 +290,14 @@ def run_backtest(
     return result
 
 
-def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
-    """Score the settled decisions of a backtest, or of a memory log at a path, by rating."""
+def summarize(source: BacktestResult | str | Path, cost_bps: float | None = None) -> BacktestSummary:
+    """Score the settled decisions of a backtest, or of a memory log at a path, by rating.
+
+    Each directional call is also scored net of one round trip: ``cost_bps`` for
+    every call when given, else the default of the ticker's market
+    (:func:`default_cost_bps`).
+    """
+    check_cost_bps(cost_bps)
     if isinstance(source, BacktestResult):
         path = source.log_path      # a run whose cells all failed wrote no log: nothing to score
     elif Path(source).is_file():
@@ -217,13 +311,24 @@ def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
                 if not e["pending"] and e["rating"] != RATING_REVIEW]
     resolved = [(e, a) for e, a in resolved if a is not None]
     by_rating: dict[str, RatingScore] = {}
+    costs: dict[str, float] = {}
     for rating in dict.fromkeys(e["rating"] for e, _ in resolved):
-        alphas = [a for e, a in resolved if e["rating"] == rating]
+        calls = [(e, a) for e, a in resolved if e["rating"] == rating]
+        alphas = [a for _, a in calls]
         direction = _DIRECTION.get(rating, 0)
+        nets = []  # Hold claims no direction, so it is neither charged nor netted
+        for e, a in calls if direction else ():
+            market, bps = (("every call", cost_bps) if cost_bps is not None
+                           else _cost_market(e["ticker"]))
+            costs[market] = bps
+            # Rounded so a call that only earns its cost back nets 0, not float noise either side.
+            nets.append(round(direction * a - bps / 10_000, 12))
         by_rating[rating] = RatingScore(
             count=len(alphas),
             hit_rate=(sum(a * direction > 0 for a in alphas) / len(alphas)) if direction else None,
             mean_alpha=sum(alphas) / len(alphas),
+            net_hit_rate=(sum(n > 0 for n in nets) / len(nets)) if nets else None,
+            mean_net=(sum(nets) / len(nets)) if nets else None,
         )
     unscored = sum(1 for e in entries if e["rating"] == RATING_REVIEW)
     # Report the window the outcomes were actually measured over, from the log.
@@ -232,4 +337,5 @@ def summarize(source: BacktestResult | str | Path) -> BacktestSummary:
     return BacktestSummary(resolved=len(resolved),
                            pending=len(entries) - len(resolved) - unscored,
                            by_rating=by_rating, unscored=unscored,
-                           holding=", ".join(sorted(windows)) or "the configured window")
+                           holding=", ".join(sorted(windows)) or "the configured window",
+                           cost_bps=cost_bps, costs=costs)
