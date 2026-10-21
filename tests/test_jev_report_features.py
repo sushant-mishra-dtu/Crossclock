@@ -12,6 +12,7 @@ otherwise, and every Noul says yes with 0.9 or 0.1 the same way.
 
 from __future__ import annotations
 
+import csv
 import json
 import threading
 from datetime import date, timedelta
@@ -287,6 +288,64 @@ def test_learning_scores_the_reports_against_the_rating_and_writes_the_table(tmp
     assert header[:6] == ["ticker", "date", "resolved", "logged_rating", "pm_rating", "alpha"]
     assert {"rating", "review", "price_trend", "price_trend_sd", "overbought"} <= set(header)
     assert result.requests == 48 * len(rf.DOCUMENTS)
+
+
+def _fixture_prices(fail=("AMD",)):
+    """Daily closes for 300 days before the sweep, rising a little each day; ``fail`` has none."""
+    asked = []
+
+    def bars_for(ticker, through):
+        asked.append((ticker, through))
+        if ticker in fail:
+            raise OSError(f"no prices for {ticker} here")
+        start = date(2025, 3, 11)
+        return [((start + timedelta(days=i)).isoformat(), 100.0 + i + len(ticker))
+                for i in range((date.fromisoformat(through) - start).days + 1)]
+
+    return bars_for, asked
+
+
+@pytest.mark.unit
+def test_learning_adds_the_price_only_baseline_from_closes_before_each_decision(tmp_path, jev_config):
+    from tradingagents.price_features import PRICE_COLUMNS
+
+    _write_run(tmp_path, _grid())
+    bars_for, asked = _fixture_prices()
+
+    result = rf.learn_from_run(tmp_path, client=FakeJev(), prices=bars_for)
+
+    names = [m.name for m in result.evaluation.models]
+    assert names == ["base rate", "rating", "price only", "rating + price", "rating + Jev features"]
+    assert sorted(asked) == [(t, "2026-03-23") for t in ("AAPL", "AMD", "MSFT", "NVDA")]  # once per ticker
+    assert result.price_errors == {"AMD": "no prices for AMD here"}
+    rows = list(csv.DictReader(result.table_path.open(encoding="utf-8")))
+    assert set(PRICE_COLUMNS) <= set(rows[0])
+    nvda = next(r for r in rows if r["ticker"] == "NVDA" and r["date"] == "2026-01-05")
+    # 300 days of closes from 2025-03-11; the last before 2026-01-05 is 100 + 299 + 4, 20 bars earlier 100 + 279 + 4.
+    assert float(nvda["ret_20d"]) == pytest.approx(403 / 383 - 1, abs=1e-4)
+    assert all(r[c] == "" for r in rows if r["ticker"] == "AMD" for c in PRICE_COLUMNS)
+    # The three models the run had before are scored as before.
+    plain = rf.learn_from_run(tmp_path, client=FakeJev(), prices=lambda t, d: [])
+    for name in ("base rate", "rating", "rating + Jev features"):
+        assert result.evaluation.model(name) == plain.evaluation.model(name)
+
+
+@pytest.mark.unit
+def test_the_learn_command_names_the_tickers_with_no_price_history(tmp_path, monkeypatch, jev_config):
+    import cli.main as m
+
+    _write_run(tmp_path / "backtest" / "sweep1", _grid())
+    monkeypatch.setitem(m.DEFAULT_CONFIG, "results_dir", str(tmp_path))
+    monkeypatch.setattr(rf, "jev_client", lambda: FakeJev())
+    monkeypatch.setattr(rf, "load_bars", _fixture_prices(fail=("AMD", "MSFT"))[0])
+
+    result = CliRunner().invoke(m.app, ["learn", "sweep1"])
+
+    assert result.exit_code == 0, result.output
+    text = " ".join(result.output.split())
+    assert "price only" in text and "rating + price" in text
+    assert "No price history for AMD: no prices for AMD here" in text
+    assert "No price history for MSFT" in text and "No price history for NVDA" not in text
 
 
 @pytest.mark.unit

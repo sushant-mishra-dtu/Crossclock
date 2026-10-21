@@ -330,3 +330,95 @@ def test_the_render_gives_the_brier_scores_and_a_reliability_table():
     assert "coarse" in text
     for lo, hi, n, mean_p, beat in ev.reliability:
         assert f"- P {lo:.1f} to {hi:.1f}: {n} decisions, mean P {mean_p:.2f}, {beat:.0%} beat" in text
+
+
+# ---------------------------------------------------------------------------
+# The price-only baseline (R4): does the LLM beat a model with no LLM at all?
+# ---------------------------------------------------------------------------
+
+PRICE = ("ret_20d", "ret_60d", "ret_120d", "vol_20d", "dist_ma50", "dist_ma200")
+WITH_PRICE = ["base rate", "rating", "price only", "rating + price", "rating + Jev features"]
+
+
+def _with_price_columns(ds, values):
+    """``ds`` with the price columns appended, one row of ``values`` per decision."""
+    return om.Dataset(np.hstack([ds.X, values]), ds.y, ds.alpha, ds.dates, ds.resolved,
+                      ds.columns + list(PRICE), ds.labels)
+
+
+def _momentum_dataset(n_days=20, per_day=5, seed=5):
+    """Decisions whose outcome follows the 60-day return; the rating and a question say nothing."""
+    rng = np.random.default_rng(seed)
+    dates = [d for d in _days(n_days) for _ in range(per_day)]
+    n = len(dates)
+    momentum = rng.normal(scale=0.1, size=n)
+    alpha = momentum / 5 + rng.normal(scale=0.005, size=n)
+    rows = [{"rating": 1.0, "review": 0.0, "noise": float(rng.uniform())} for _ in range(n)]
+    base = om.Dataset.from_rows(rows, ["rating", "review", "noise"], alpha, dates,
+                                [_later(d) for d in dates], [f"T{i} {d} Buy" for i, d in enumerate(dates)])
+    prices = rng.normal(scale=0.05, size=(n, len(PRICE)))
+    prices[:, PRICE.index("ret_60d")] = momentum
+    return _with_price_columns(base, prices)
+
+
+@pytest.mark.unit
+def test_price_only_beats_the_base_rate_when_outcomes_follow_momentum():
+    ev = om.evaluate(_momentum_dataset(), {"noise": ("noise",)}, baseline=("rating", "review"), price=PRICE)
+
+    assert [m.name for m in ev.models] == WITH_PRICE
+    base, price, both = (ev.model(n) for n in ("base rate", "price only", "rating + price"))
+    assert price.holdout_loss < base.holdout_loss - 0.1
+    assert price.cv_loss < base.cv_loss - 0.1
+    assert both.holdout_loss < ev.model("rating").holdout_loss - 0.1
+    assert price.favoured[0] > price.rest[0]  # where price favours the stock, it did better
+    assert price.l2 in om.L2_GRID
+
+
+@pytest.mark.unit
+def test_the_price_models_leave_the_three_existing_models_unchanged():
+    plain = om.evaluate(_dataset(), QUESTIONS, baseline=("rating", "review"))
+    ds = _with_price_columns(_dataset(), np.random.default_rng(11).normal(size=(64, len(PRICE))))
+    ev = om.evaluate(ds, QUESTIONS, baseline=("rating", "review"), price=PRICE)
+
+    assert [m.name for m in ev.models] == WITH_PRICE
+    for name in ("base rate", "rating", "rating + Jev features"):
+        assert ev.model(name) == plain.model(name), name
+    assert (ev.questions, ev.worst, ev.reliability) == (plain.questions, plain.worst, plain.reliability)
+    # And they are still the figures pinned on main 4ab64a3, before the Brier score (R1).
+    assert ev.model("rating + Jev features").holdout_loss == pytest.approx(0.07068757806909279, abs=1e-9)
+    assert ev.model("rating").cv_loss == pytest.approx(0.6869211491470799, abs=1e-9)
+
+
+@pytest.mark.unit
+def test_without_price_columns_there_are_no_price_models():
+    ev = om.evaluate(_dataset(), QUESTIONS, baseline=("rating", "review"))
+    assert [m.name for m in ev.models] == ["base rate", "rating", "rating + Jev features"]
+    assert "Price features" not in ev.render()
+
+
+@pytest.mark.unit
+def test_a_price_column_missing_for_some_decisions_is_reported_and_does_not_break_the_fit():
+    ds = _momentum_dataset()
+    early = [i for i, d in enumerate(ds.dates) if d < _days(20)[3]]   # the first 3 dates: 15 decisions
+    ds.X[early, ds.columns.index("dist_ma200")] = np.nan
+
+    ev = om.evaluate(ds, {"noise": ("noise",)}, baseline=("rating", "review"), price=PRICE)
+
+    assert ev.price_missing == {"dist_ma200": 15}
+    text = " ".join(ev.render().split())
+    assert "dist_ma200 missing for 15 of 100 decisions" in text
+    for name in ("price only", "rating + price"):
+        assert f"- {name}: log loss dev CV" in text
+    assert ev.model("price only").holdout_loss < ev.model("base rate").holdout_loss - 0.1
+
+
+@pytest.mark.unit
+def test_no_price_history_at_all_makes_the_price_models_the_base_rate_and_says_so():
+    ds = _with_price_columns(_dataset(), np.full((64, len(PRICE)), np.nan))
+
+    ev = om.evaluate(ds, QUESTIONS, baseline=("rating", "review"), price=PRICE)
+
+    assert ev.model("price only").holdout_loss == pytest.approx(ev.model("base rate").holdout_loss, abs=1e-6)
+    assert ev.model("rating + price").holdout_loss == pytest.approx(ev.model("rating").holdout_loss, abs=1e-6)
+    assert ev.price_missing == dict.fromkeys(PRICE, 64)
+    assert "no price history" in " ".join(ev.render().split()).lower()
