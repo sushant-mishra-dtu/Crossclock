@@ -258,6 +258,48 @@ def test_evaluate_reports_each_models_paths_and_the_pbo_of_its_grid():
 
 
 @pytest.mark.unit
+def test_a_models_path_scores_are_its_chosen_l2s_paths_at_the_10th_50th_and_90th_percentile():
+    ds = _dataset()
+    ev = om.evaluate(ds, QUESTIONS, baseline=("rating", "review"))
+    dev, _, _ = om.holdout_split(ds.dates, ds.resolved, 0.25)
+    splits = [s for s in om.combinatorial_purged_splits(ds.dates, ds.resolved, dev) if om._trainable(ds.y[s.train])]
+    full = ev.model("rating + Jev features")
+    cols = ds.indices(["rating", "review", "signal", "signal_sd", "noise", "flat"])
+
+    def path_scores(l2):
+        losses, briers = [], []
+        for path in om.backtest_paths(splits, om.cpcv_fit(ds, splits, cols, l2).predictions, len(ds.y)):
+            scored = ~np.isnan(path)
+            losses.append(om.log_loss(ds.y[scored], path[scored]))
+            briers.append(om.brier(ds.y[scored], path[scored]))
+        return losses, briers
+
+    losses, briers = path_scores(full.l2)
+    assert full.paths_loss == pytest.approx(tuple(np.percentile(losses, [50, 10, 90])))
+    assert full.paths_brier == pytest.approx(tuple(np.percentile(briers, [50, 10, 90])))
+    assert path_scores(30.0)[0] != pytest.approx(losses)  # another L2 would give other figures
+
+
+@pytest.mark.unit
+def test_splits_with_too_few_training_decisions_are_left_out_and_counted():
+    # Three decisions a date: purging two blocks' windows leaves some splits under 10 training rows.
+    rng = np.random.default_rng(6)
+    dates = [d for d in _days(16) for _ in range(3)]
+    x = rng.normal(size=len(dates))
+    rows = [{"rating": 1.0, "review": 0.0, "signal": float(v)} for v in x]
+    ds = om.Dataset.from_rows(rows, ["rating", "review", "signal"], np.where(x + rng.normal(size=len(x)) > 0, 0.01, -0.01),
+                              dates, [_later(d) for d in dates], [f"T{i}" for i in range(len(dates))])
+    dev, _, _ = om.holdout_split(ds.dates, ds.resolved, 0.25)
+    trainable = sum(om._trainable(ds.y[s.train]) for s in om.combinatorial_purged_splits(ds.dates, ds.resolved, dev))
+
+    ev = om.evaluate(ds, {"signal": ("signal",)}, baseline=("rating", "review"))
+
+    assert 0 < trainable < 15
+    assert ev.cpcv.used == trainable
+    assert f"{trainable} of them with enough training decisions" in " ".join(ev.render().split())
+
+
+@pytest.mark.unit
 def test_on_noise_the_in_sample_best_configuration_overfits():
     """No column carries the outcome: the configuration that fits the training
     decisions best is the most flexible one, and it does worse than most out of sample."""
