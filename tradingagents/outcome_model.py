@@ -4,7 +4,10 @@ Fit 5 in docs/jev-use-cases.md. ``report_features`` turns each decision's
 reports into numeric columns; this fits an L2-regularised logistic regression of
 "alpha > 0" on them and asks whether they predict better than the rating alone.
 The result is a probability, so it can sit next to the rating as a calibrated
-signal, but only once it has beaten the rating on decisions it never saw.
+signal, but only once it has beaten the rating on decisions it never saw. Each
+model is scored by log loss and by the Brier score, and the full model's
+held-out predictions are binned into a reliability table, since log loss alone
+does not show whether the probabilities are calibrated.
 
 Decisions are ordered in time and their holding windows overlap, so every split
 is chronological: the latest analysis dates are held out, the rest are
@@ -85,6 +88,36 @@ def _sigmoid(z: np.ndarray) -> np.ndarray:
 def log_loss(y: np.ndarray, p: np.ndarray) -> float:
     p = np.clip(p, 1e-6, 1 - 1e-6)
     return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+
+
+def brier(y: Sequence[float], p: Sequence[float]) -> float:
+    """Mean squared error of the probabilities: 0 is perfect, 0.25 a constant coin flip.
+
+    Unlike log loss it is bounded (a confident miss costs at most 1), so a few
+    sharp misses do not dominate it.
+    """
+    y, p = np.asarray(y, dtype=float), np.asarray(p, dtype=float)
+    return float(np.mean((p - y) ** 2))
+
+
+def reliability(y: Sequence[float], p: Sequence[float],
+                bins: int = 5) -> list[tuple[float, float, int, float, float]]:
+    """(low, high, count, mean p, share of y = 1) for each non-empty bin of p.
+
+    The bins cut [0, 1] into ``bins`` equal widths, each closed on the left; the
+    last is also closed on the right, so p = 1 falls in it. A calibrated model's
+    share matches its mean p in every bin.
+    """
+    y, p = np.asarray(y, dtype=float), np.asarray(p, dtype=float)
+    edges = np.arange(bins + 1) / bins
+    which = np.clip(np.searchsorted(edges, p, side="right") - 1, 0, bins - 1)
+    rows = []
+    for k in range(bins):
+        in_bin = which == k
+        if in_bin.any():
+            rows.append((float(edges[k]), float(edges[k + 1]), int(in_bin.sum()),
+                         float(p[in_bin].mean()), float(y[in_bin].mean())))
+    return rows
 
 
 def column_stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -199,6 +232,8 @@ class ModelScore:
     l2: float | None
     cv_loss: float
     holdout_loss: float
+    cv_brier: float          # Brier score of the same predictions as the log losses
+    holdout_brier: float
     favoured: tuple[float, int] | None = None   # mean held-out alpha and count, p above base rate
     rest: tuple[float, int] | None = None
 
@@ -221,6 +256,8 @@ class Evaluation:
     models: list[ModelScore]
     questions: list[QuestionScore] = field(default_factory=list)
     worst: list[tuple[str, float, float]] = field(default_factory=list)  # label, p, alpha
+    # The full model's held-out predictions by bin: low, high, count, mean p, share that beat.
+    reliability: list[tuple[float, float, int, float, float]] = field(default_factory=list)
 
     def model(self, name: str) -> ModelScore:
         return next(m for m in self.models if m.name == name)
@@ -234,16 +271,24 @@ class Evaluation:
             f"{self.train_rows} settled before {first}, of which {self.base_rate:.0%} "
             "beat the benchmark.",
             "",
-            "Log loss of P(beats the benchmark), lower is better (0.693 is a coin flip):",
+            "Scores of P(beats the benchmark), lower is better: log loss (0.693 is a coin "
+            "flip) and the Brier score, the mean squared error of P (0.250 is a coin flip):",
         ]
         for m in self.models:
-            line = f"- {m.name}: dev CV {m.cv_loss:.3f}, held out {m.holdout_loss:.3f}"
+            line = (f"- {m.name}: log loss dev CV {m.cv_loss:.3f}, held out {m.holdout_loss:.3f}; "
+                    f"Brier dev CV {m.cv_brier:.3f}, held out {m.holdout_brier:.3f}")
             if m.l2 is not None:
                 line += f" (L2 {m.l2:g})"
             if m.favoured and m.rest:
                 line += (f"; held-out alpha {m.favoured[0]:+.2%} (n={m.favoured[1]}) where it "
                          f"favours the stock vs {m.rest[0]:+.2%} (n={m.rest[1]}) elsewhere")
             lines.append(line)
+        if self.reliability:
+            lines += ["", f"Reliability of {self.models[-1].name} on the held-out dates, by "
+                      "predicted P (empty bins left out); a calibrated model's share that beat "
+                      "matches its mean P. A few dozen held-out decisions make these bins coarse:"]
+            lines += [f"- P {lo:.1f} to {hi:.1f}: {n} decisions, mean P {mean_p:.2f}, {beat:.0%} beat"
+                      for lo, hi, n, mean_p, beat in self.reliability]
         if self.questions:
             lines += ["", "Questions, by how much dropping each one raises the dev CV log "
                       "loss of the full model. Keep one only while this is above 0; a "
@@ -294,13 +339,17 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
     for name, cols in (("base rate", []), ("rating", base_cols),
                        ("rating + Jev features", all_cols)):
         grid = L2_GRID if cols else (1.0,)
-        l2, cv = min(((l2, cross_validate(ds, cols, folds, l2)[0]) for l2 in grid),
-                     key=lambda pair: pair[1])
+        l2, cv, oof = min(((l2, *cross_validate(ds, cols, folds, l2)) for l2 in grid),
+                          key=lambda fit: fit[1])
         model = fit_logistic(ds.X[np.ix_(train, cols)], ds.y[train], l2)
         p = model.predict(ds.X[np.ix_(test, cols)])
         favoured, rest = _alpha_split(ds.alpha[test], p, base_rate) if cols else (None, None)
+        oof_rows = ~np.isnan(oof)
         models.append(ModelScore(name, l2 if cols else None, cv, log_loss(ds.y[test], p),
-                                 favoured, rest))
+                                 cv_brier=brier(ds.y[oof_rows], oof[oof_rows]),
+                                 holdout_brier=brier(ds.y[test], p),
+                                 favoured=favoured, rest=rest))
+    calibration = reliability(ds.y[test], p)  # p: the last model's, the full one
 
     full_l2 = models[-1].l2
     full_cv, oof = cross_validate(ds, all_cols, folds, full_l2)
@@ -322,5 +371,5 @@ def evaluate(ds: Dataset, questions: Mapping[str, Sequence[str]], baseline: Sequ
     return Evaluation(
         decisions=len(ds.y), dates=len(set(ds.dates)), holdout_dates=(min(held), max(held)),
         holdout_rows=len(test), train_rows=len(train), base_rate=base_rate,
-        models=models, questions=scored, worst=worst,
+        models=models, questions=scored, worst=worst, reliability=calibration,
     )

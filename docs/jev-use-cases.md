@@ -483,7 +483,15 @@ tradingagents learn sweep1
    tested on: its holding window overlaps the next week's, and a shuffled split
    would train on outcomes from the test period. Each model's penalty is chosen
    on those folds (0.3 to 30), and each model is then scored once on the held-out
-   dates.
+   dates. The penalty is chosen by log loss. The same predictions also get a
+   Brier score (the mean squared error of the probability; 0.25 is a coin flip).
+   The full model's held-out predictions are then binned into a reliability
+   table: five bins of P, each with its count, its mean P and the share that beat
+   the benchmark. Log loss alone does not show calibration: a model that is
+   barely better than chance but overconfident loses money when bets are sized by
+   its probabilities (FinBench, arXiv 2607.16229). FinBench's interval (Winkler)
+   score is not computed, because `learn` predicts only P(alpha > 0), not a
+   return interval.
 7. For each question, the dev log loss of the full model without its columns,
    minus with them. Keep a question while this is above 0, as the cookbook
    does. A question whose columns all have a standard deviation under 0.05 on
@@ -522,10 +530,15 @@ carries none. No real sweep has been scored yet.
 ```
 Settled decisions: 64 over 16 analysis dates. Held out 2026-03-30 to 2026-04-20: 16 decisions. Trained on the 44 settled before 2026-03-30, of which 52% beat the benchmark.
 
-Log loss of P(beats the benchmark), lower is better (0.693 is a coin flip):
-- base rate: dev CV 0.687, held out 0.688
-- rating: dev CV 0.687, held out 0.688 (L2 0.3)
-- rating + Jev features: dev CV 0.324, held out 0.071 (L2 0.3); held-out alpha +2.09% (n=9) where it favours the stock vs -2.40% (n=7) elsewhere
+Scores of P(beats the benchmark), lower is better: log loss (0.693 is a coin flip) and the Brier score, the mean squared error of P (0.250 is a coin flip):
+- base rate: log loss dev CV 0.687, held out 0.688; Brier dev CV 0.247, held out 0.248
+- rating: log loss dev CV 0.687, held out 0.688; Brier dev CV 0.247, held out 0.248 (L2 0.3)
+- rating + Jev features: log loss dev CV 0.324, held out 0.071; Brier dev CV 0.112, held out 0.010 (L2 0.3); held-out alpha +2.09% (n=9) where it favours the stock vs -2.40% (n=7) elsewhere
+
+Reliability of rating + Jev features on the held-out dates, by predicted P (empty bins left out); a calibrated model's share that beat matches its mean P. A few dozen held-out decisions make these bins coarse:
+- P 0.0 to 0.2: 5 decisions, mean P 0.03, 0% beat
+- P 0.2 to 0.4: 2 decisions, mean P 0.26, 0% beat
+- P 0.8 to 1.0: 9 decisions, mean P 0.96, 100% beat
 
 Questions, by how much dropping each one raises the dev CV log loss of the full model. Keep one only while this is above 0; a small gain is often noise:
 - signal: +0.3672 (keep)

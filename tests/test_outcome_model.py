@@ -174,3 +174,159 @@ def test_a_dev_period_with_one_outcome_only_cannot_be_cross_validated():
     ds.y[:] = 1.0
     with pytest.raises(om.NotEnoughData, match="cross-validate"):
         om.evaluate(ds, QUESTIONS, baseline=("rating", "review"))
+
+
+# ---------------------------------------------------------------------------
+# Calibration: Brier score and reliability
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_the_brier_score_is_the_mean_squared_error_of_the_probability():
+    # (0.8 - 1)^2 = 0.04 and (0.3 - 0)^2 = 0.09, so the mean is 0.13 / 2 = 0.065.
+    assert om.brier([1, 0], [0.8, 0.3]) == pytest.approx(0.065)
+    y = np.array([1.0, 0.0, 0.0, 1.0, 1.0])
+    assert om.brier(y, np.full(5, 0.5)) == pytest.approx(0.25)  # a coin flip
+    assert om.brier(y, y) == 0.0
+
+
+@pytest.mark.unit
+def test_reliability_bins_the_probabilities_and_skips_empty_bins():
+    p = [0.9, 0.05, 0.35, 1.0, 0.2, 0.6, 0.15, 0.85]
+    y = [0, 0, 0, 1, 1, 1, 0, 1]
+
+    rows = om.reliability(y, p, bins=5)
+
+    # Bins of width 0.2, each closed on the left; the last also holds p = 1.
+    # [0, 0.2):   0.05, 0.15            -> mean 0.10,   none beat
+    # [0.2, 0.4): 0.2 (on the edge), 0.35 -> mean 0.275,  1 of 2
+    # [0.4, 0.6): empty, left out
+    # [0.6, 0.8): 0.6 (on the edge)     -> mean 0.6,    1 of 1
+    # [0.8, 1]:   0.9, 1.0, 0.85        -> mean 2.75/3, 2 of 3
+    expected = [(0.0, 0.2, 2, 0.10, 0.0), (0.2, 0.4, 2, 0.275, 0.5),
+                (0.6, 0.8, 1, 0.6, 1.0), (0.8, 1.0, 3, 2.75 / 3, 2 / 3)]
+    assert len(rows) == len(expected)
+    for row, want in zip(rows, expected, strict=True):
+        assert row[:3] == want[:3]
+        assert row[3:] == pytest.approx(want[3:])
+
+    # Two bins: [0, 0.5) holds 0.05, 0.15, 0.2, 0.35 (1 of 4 beat), [0.5, 1] the rest (3 of 4).
+    low, high = om.reliability(y, p, bins=2)
+    assert low == pytest.approx((0.0, 0.5, 4, 0.1875, 0.25))
+    assert high == pytest.approx((0.5, 1.0, 4, 0.8375, 0.75))
+
+
+@pytest.mark.unit
+def test_the_log_losses_are_unchanged_by_the_calibration_scores():
+    # Pinned on main 4ab64a3, before the Brier score and reliability were added.
+    ev = om.evaluate(_dataset(), QUESTIONS, baseline=("rating", "review"))
+
+    pinned = {
+        "base rate": (None, 0.6869211491470799, 0.6884955712837247),
+        "rating": (0.3, 0.6869211491470799, 0.6884955712837247),
+        "rating + Jev features": (0.3, 0.3238875982474984, 0.07068757806909279),
+    }
+    assert [m.name for m in ev.models] == list(pinned)
+    for m in ev.models:
+        l2, cv, held = pinned[m.name]
+        assert m.l2 == l2
+        assert m.cv_loss == pytest.approx(cv, abs=1e-9)
+        assert m.holdout_loss == pytest.approx(held, abs=1e-9)
+    gains = {q.id: q.gain for q in ev.questions}
+    assert gains == pytest.approx({"signal": 0.36716775355597014,
+                                   "noise": 0.005643795155139686, "flat": 0.0}, abs=1e-9)
+
+
+def _folds_and_split(ds):
+    dev, train, test = om.holdout_split(ds.dates, ds.resolved, 0.25)
+    folds = [(tr, te) for tr, te in om.walk_forward(ds.dates, ds.resolved, dev)
+             if om._trainable(ds.y[tr])]
+    return folds, train, test
+
+
+@pytest.mark.unit
+def test_the_base_rate_scores_the_brier_of_its_training_share():
+    ds = _dataset()
+    ev = om.evaluate(ds, QUESTIONS, baseline=("rating", "review"))
+    folds, train, test = _folds_and_split(ds)
+
+    # With no columns, each fold predicts the share of its training rows that beat,
+    # and the held-out model the share of all training rows (the base rate).
+    oof = np.full(len(ds.y), np.nan)
+    for tr, te in folds:
+        oof[te] = ds.y[tr].mean()
+    scored = ~np.isnan(oof)
+    base = ev.model("base rate")
+    assert base.cv_brier == pytest.approx(np.mean((oof[scored] - ds.y[scored]) ** 2), abs=1e-6)
+    assert base.holdout_brier == pytest.approx(np.mean((ev.base_rate - ds.y[test]) ** 2), abs=1e-6)
+
+
+@pytest.mark.unit
+def test_the_brier_scores_and_reliability_come_from_the_predictions_the_log_losses_score():
+    ds = _dataset()
+    ev = om.evaluate(ds, QUESTIONS, baseline=("rating", "review"))
+    folds, train, test = _folds_and_split(ds)
+    full = ev.model("rating + Jev features")
+    cols = ds.indices(["rating", "review", "signal", "signal_sd", "noise", "flat"])
+
+    cv, oof = om.cross_validate(ds, cols, folds, full.l2)
+    scored = ~np.isnan(oof)
+    assert full.cv_loss == pytest.approx(cv)
+    assert full.cv_brier == pytest.approx(om.brier(ds.y[scored], oof[scored]))
+
+    p = om.fit_logistic(ds.X[np.ix_(train, cols)], ds.y[train], full.l2).predict(
+        ds.X[np.ix_(test, cols)])
+    assert full.holdout_loss == pytest.approx(om.log_loss(ds.y[test], p))
+    assert full.holdout_brier == pytest.approx(om.brier(ds.y[test], p))
+    assert len(ev.reliability) == len(om.reliability(ds.y[test], p))
+    for row, want in zip(ev.reliability, om.reliability(ds.y[test], p), strict=True):
+        assert row == pytest.approx(want)
+    assert sum(n for _, _, n, _, _ in ev.reliability) == ev.holdout_rows
+    # The signal separates the outcomes, so the full model beats the base rate on both scores.
+    assert full.holdout_brier < ev.model("base rate").holdout_brier - 0.1
+
+
+def _calibrated_dataset(n_days=40, per_day=25, seed=3):
+    """Outcomes drawn with a known probability of one column, so the fit is calibrated."""
+    rng = np.random.default_rng(seed)
+    dates = [d for d in _days(n_days) for _ in range(per_day)]
+    x = rng.normal(size=len(dates))
+    beat = rng.uniform(size=len(dates)) < 1 / (1 + np.exp(-1.5 * x))
+    rows = [{"rating": 1.0, "review": 0.0, "signal": float(v)} for v in x]
+    return om.Dataset.from_rows(
+        rows, ["rating", "review", "signal"], np.where(beat, 0.01, -0.01), dates,
+        [_later(d) for d in dates], [f"T{i} {d} Buy" for i, d in enumerate(dates)],
+    )
+
+
+@pytest.mark.unit
+def test_a_model_of_outcomes_drawn_with_its_probability_lies_near_the_diagonal():
+    ev = om.evaluate(_calibrated_dataset(), {"signal": ("signal",)}, baseline=("rating", "review"))
+
+    assert ev.holdout_rows == 250
+    assert sum(n for _, _, n, _, _ in ev.reliability) == 250
+    assert len(ev.reliability) >= 4
+    # Loose bounds: each bin's share within 3 standard errors of its mean P, plus 0.05
+    # for the L2 penalty's pull towards 0.5, and a count-weighted mean gap under 0.12.
+    # Over seeds 0-199 the worst bin was 2.4 standard errors out and the worst mean gap 0.108.
+    gap = 0.0
+    for lo, hi, n, mean_p, beat in ev.reliability:
+        assert lo <= mean_p <= hi
+        assert abs(beat - mean_p) < 0.05 + 3 * np.sqrt(mean_p * (1 - mean_p) / n), (lo, n, beat)
+        gap += n * abs(beat - mean_p) / 250
+    assert gap < 0.12
+
+
+@pytest.mark.unit
+def test_the_render_gives_the_brier_scores_and_a_reliability_table():
+    ev = om.evaluate(_dataset(), QUESTIONS, baseline=("rating", "review"))
+
+    text = " ".join(ev.render().split())
+    assert "Brier" in text and "0.250 is a coin flip" in text and "0.693 is a coin flip" in text
+    for m in ev.models:
+        assert (f"{m.name}: log loss dev CV {m.cv_loss:.3f}, held out {m.holdout_loss:.3f}; "
+                f"Brier dev CV {m.cv_brier:.3f}, held out {m.holdout_brier:.3f}") in text
+    assert "Reliability of rating + Jev features on the held-out dates" in text
+    assert "coarse" in text
+    for lo, hi, n, mean_p, beat in ev.reliability:
+        assert f"- P {lo:.1f} to {hi:.1f}: {n} decisions, mean P {mean_p:.2f}, {beat:.0%} beat" in text
