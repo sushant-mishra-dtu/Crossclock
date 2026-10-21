@@ -17,10 +17,13 @@ import os
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
+from contextvars import copy_context
 
 import requests
 
 from tradingagents.agents.context import resolve_instrument_identity
+from tradingagents.run_control import current_control
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,8 @@ def system_one(state, questions: dict) -> dict[str, dict]:
 
     Rate-limit and overload responses and dropped connections are retried with
     backoff, honouring ``Retry-After``; any other failure raises
-    ``TypeSafeError`` at once.
+    ``TypeSafeError`` at once. Inside a run, each attempt and wait obeys its Stop
+    and deadline, and an attempt's timeout is cut to the time left (docs/adr/0001).
     """
     body = {
         "state": state,
@@ -78,21 +82,34 @@ def system_one(state, questions: dict) -> dict[str, dict]:
         "questions": questions,
     }
     headers = {"Authorization": f"Bearer {os.environ.get('TYPESAFE_API_KEY', '')}"}
-    backoff, retry_after = 1.0, None
+    control = current_control()
+    backoff, retry_after, kind = 1.0, None, None
     for attempt in range(_ATTEMPTS):
         if attempt:
-            time.sleep(retry_after if retry_after is not None else backoff * random.uniform(0.8, 1.2))
+            delay = retry_after if retry_after is not None else backoff * random.uniform(0.8, 1.2)
+            if control is None:
+                time.sleep(delay)
+            else:
+                control.wait_before_retry(delay, {"provider": "typesafe", "model": body["model"],
+                                                  "error_class": kind, "attempts": attempt,
+                                                  "waited_seconds": None})
             backoff *= 2
+        if control is not None:
+            control.check()
+        timeout = _TIMEOUT if control is None else min(_TIMEOUT, control.attempt_timeout())
         try:
-            response = requests.post(_url(), json=body, headers=headers, timeout=_TIMEOUT)
+            with control.request() if control is not None else nullcontext():
+                response = requests.post(_url(), json=body, headers=headers, timeout=timeout)
         except requests.RequestException as exc:
             failure, retry_after = type(exc).__name__, None
+            kind = "timeout" if isinstance(exc, requests.Timeout) else "connection"
             if isinstance(exc, _TRANSIENT):
                 continue
             break
         if response.status_code == 200:
             return _answers(response, questions)
         failure, retry_after = f"HTTP {response.status_code}", _retry_after(response)
+        kind = "rate_limit" if response.status_code == 429 else "server"
         if response.status_code not in _RETRY_STATUSES:
             break
     raise TypeSafeError(failure)
@@ -170,8 +187,10 @@ def _ask_each(instrument: str, posts: list[str]) -> list[dict]:
     answers: list = [None] * len(posts)
     pool = ThreadPoolExecutor(max_workers=_WORKERS)
     try:
+        # A pool thread does not inherit the run's context (its Stop and deadline);
+        # each request runs in its own copy, as in jev.ask_each.
         futures = {
-            pool.submit(system_one, {"instrument": instrument, "post": post}, QUESTIONS): i
+            pool.submit(copy_context().run, system_one, {"instrument": instrument, "post": post}, QUESTIONS): i
             for i, post in enumerate(posts)
         }
         for future in as_completed(futures):
