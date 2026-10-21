@@ -9,6 +9,8 @@ one round trip taken off each directional call, not a fill.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from tradingagents.backtest import iter_grid, run_backtest, summarize
@@ -515,6 +517,8 @@ def _cli(monkeypatch, log, *args):
     import cli.main as m
     from tradingagents.backtest import BacktestResult
 
+    # The command appends to the trial ledger in results_dir; keep it beside the log.
+    monkeypatch.setitem(m.DEFAULT_CONFIG, "results_dir", str(log.parent / "results"))
     swept = []
     monkeypatch.setattr(m, "run_backtest",
                         lambda *a, **kw: swept.append(kw) or BacktestResult(run_id="r", log_path=log))
@@ -596,3 +600,255 @@ def test_the_browser_summary_passes_the_cost_it_is_given(tmp_path, monkeypatch):
     log = _web_run(tmp_path, monkeypatch, _NSE_BUY)
     assert backtest_summary(log).by_rating["Buy"].mean_net == pytest.approx(0.002)
     assert backtest_summary(log, cost_bps=0).by_rating["Buy"].mean_net == pytest.approx(0.005)
+
+
+# --- follow the ratings: period returns, Sharpe, PSR and DSR -------------------
+#
+# One period per analysis date: the mean net directional return of that date's
+# directional calls (R2's net: direction * alpha - cost). The deflated Sharpe
+# ratio takes N, the configurations tried on overlapping data, from the trial ledger.
+
+_PERIOD_ROWS = [
+    ("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.005)),           # +0.5% - 0.3% = +0.2%
+    ("AAPL", "2026-01-05", "Rating: Sell\n\nx", (-0.01, -0.002)),        # +0.2% - 0.3% = -0.1%
+    ("MSFT", "2026-01-05", "Rating: Hold\n\nx", (0.02, 0.01)),           # Hold: no call
+    ("NVDA", "2026-01-12", "Rating: Hold\n\nx", (0.01, 0.004)),          # no call that date: no period
+    ("NVDA", "2026-01-19", "Rating: Overweight\n\nx", (0.02, 0.01)),     # +1.0% - 0.3% = +0.7%
+    ("AAPL", "2026-01-19", "Rating: Buy\n\nx", None),                    # pending: not scored
+    ("AAPL", "2026-01-26", "Rating: Underweight\n\nx", (0.01, 0.004)),   # -0.4% - 0.3% = -0.7%
+]
+
+
+@pytest.mark.unit
+def test_each_analysis_date_is_one_period_of_its_calls_mean_net_return(tmp_path):
+    summary = _summary(tmp_path, _PERIOD_ROWS, cost_bps=30)
+    # 2026-01-05: (+0.2% - 0.1%) / 2 = +0.05%; 2026-01-19: +0.7%; 2026-01-26: -0.7%.
+    assert [day for day, _ in summary.periods] == ["2026-01-05", "2026-01-19", "2026-01-26"]
+    assert [r for _, r in summary.periods] == pytest.approx([0.0005, 0.007, -0.007])
+    assert summary.window == ("2026-01-05", "2026-01-26")  # the analysis dates scored
+
+
+@pytest.mark.unit
+def test_the_periods_use_each_markets_default_cost_like_the_net_figures(tmp_path):
+    # RELIANCE.NS +0.5% at 30 bps nets +0.2%; NVDA +0.5% at 5 bps nets +0.45%; the date's mean +0.325%.
+    summary = _summary(tmp_path, [
+        ("RELIANCE.NS", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.005)),
+        ("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.005)),
+    ])
+    assert summary.periods == [("2026-01-05", pytest.approx(0.00325))]
+
+
+@pytest.mark.unit
+def test_too_few_periods_are_reported_as_such_not_as_a_ratio(tmp_path):
+    summary = _summary(tmp_path, _PERIOD_ROWS, cost_bps=30)
+    summary.trials = _count(1, 1)
+    text = _flat(summary.render())
+    assert summary.sharpe() is None
+    assert "too few periods" in text and "3 analysis dates" in text
+    assert "Probabilistic Sharpe ratio" not in text and "Deflated Sharpe ratio" not in text
+
+
+# Six periods at no cost, worked by hand:
+#   2026-01-05: Buy +0.3% and Sell +0.3% net +0.3% and -0.3%, mean 0
+#   2026-01-12 to 2026-02-02: a call each with alpha 0 (the Hold on 02-02 is not a call)
+#   2026-02-09: Sell -1.2% nets +1.2%
+# r = 0, 0, 0, 0, 0, 0.012: mean 0.002; deviations -0.002 (five times) and +0.010; over T = 6,
+#   m2 = (5 * 4e-6 + 1e-4) / 6 = 2e-5,  m3 = (5 * -8e-9 + 1e-6) / 6 = 1.6e-7,
+#   m4 = (5 * 1.6e-11 + 1e-8) / 6 = 1.68e-9
+#   Sharpe = 0.002 / sqrt(2e-5) = 1/sqrt(5) = 0.447; skew = 1.6e-7 / (2e-5)^1.5 = 4/sqrt(5) = 1.789;
+#   kurtosis = 1.68e-9 / (2e-5)^2 = 4.2
+#   1 - skew * SR + (kurtosis - 1) / 4 * SR^2 = 1 - 0.8 + 0.16 = 0.36
+#   PSR = Phi(SR * sqrt(5) / 0.6) = Phi(5/3) = 0.952
+#   N = 3: E[max] = (1 - g) z(2/3) + g z(1 - 1/(3e)) = 0.85280 (V = 1 / (T - 1));
+#   DSR = Phi((SR * sqrt(5) - 0.85280) / 0.6) = Phi(0.24533) = 0.597
+_SIX_PERIODS = [
+    ("NVDA", "2026-01-05", "Rating: Buy\n\nx", (0.01, 0.003)),
+    ("AAPL", "2026-01-05", "Rating: Sell\n\nx", (0.01, 0.003)),
+    ("NVDA", "2026-01-12", "Rating: Buy\n\nx", (0.0, 0.0)),
+    ("NVDA", "2026-01-19", "Rating: Underweight\n\nx", (0.0, 0.0)),
+    ("NVDA", "2026-01-26", "Rating: Overweight\n\nx", (0.0, 0.0)),
+    ("NVDA", "2026-02-02", "Rating: Buy\n\nx", (0.0, 0.0)),
+    ("MSFT", "2026-02-02", "Rating: Hold\n\nx", (0.05, 0.05)),
+    ("AAPL", "2026-02-09", "Rating: Sell\n\nx", (-0.012, -0.012)),
+]
+
+
+def _count(configurations, runs):
+    from tradingagents.trials import TrialCount
+
+    return TrialCount(configurations=configurations, runs=runs)
+
+
+@pytest.mark.unit
+def test_the_sharpe_ratio_of_following_the_ratings(tmp_path):
+    import math
+
+    stats = _summary(tmp_path, _SIX_PERIODS, cost_bps=0).sharpe()
+    assert stats.periods == 6
+    assert stats.sharpe == pytest.approx(1 / math.sqrt(5))
+    assert stats.skew == pytest.approx(4 / math.sqrt(5))
+    assert stats.kurtosis == pytest.approx(4.2)
+
+
+@pytest.mark.unit
+def test_the_render_gives_the_probabilistic_and_deflated_ratios_and_the_ledgers_counts(tmp_path):
+    summary = _summary(tmp_path, _SIX_PERIODS, cost_bps=0)
+    summary.trials = _count(3, 4)
+    text = _flat(summary.render())
+    assert "6 periods" in text
+    assert "Sharpe ratio +0.45" in text and "skew +1.79" in text and "kurtosis 4.20" in text
+    assert "Probabilistic Sharpe ratio: 0.95" in text
+    assert ("Deflated Sharpe ratio: 0.60 (N = 3 configurations); below 0.95 the result is not "
+            "distinguishable from the best of 3 random tries") in text
+    assert "3 configurations, 4 runs" in text
+
+
+@pytest.mark.unit
+def test_one_configuration_is_deflated_by_nothing(tmp_path):
+    summary = _summary(tmp_path, _SIX_PERIODS, cost_bps=0)
+    summary.trials = _count(1, 1)
+    text = _flat(summary.render())
+    # PSR = DSR = Phi(5/3) = 0.952 with N = 1.
+    assert "Deflated Sharpe ratio: 0.95 (N = 1 configuration)" in text
+    assert "1 configuration, 1 run" in text
+
+
+@pytest.mark.unit
+def test_without_a_trial_count_nothing_is_called_deflated(tmp_path):
+    text = _flat(_summary(tmp_path, _SIX_PERIODS, cost_bps=0).render())
+    assert "Probabilistic Sharpe ratio: 0.95" in text
+    assert "Deflated Sharpe ratio" not in text
+
+
+@pytest.mark.unit
+def test_periods_that_do_not_vary_have_no_sharpe_ratio(tmp_path):
+    rows = [("NVDA", f"2026-01-{day:02d}", "Rating: Buy\n\nx", (0.0, 0.0)) for day in (5, 12, 19, 26)]
+    rows += [("NVDA", f"2026-02-{day:02d}", "Rating: Buy\n\nx", (0.0, 0.0)) for day in (2, 9)]
+    summary = _summary(tmp_path, rows, cost_bps=0)
+    summary.trials = _count(1, 1)
+    assert summary.sharpe() is None
+    text = _flat(summary.render())
+    assert "do not vary" in text and "Probabilistic Sharpe ratio" not in text
+
+
+# R2's render of the guard rows at 30 bps, from `1ea157c`: the new lines come after it.
+_R2_RENDER_30 = [
+    "Resolved cells: 5 · pending: 0",
+    "- Buy: n=2, called the direction 50%, mean alpha +1.00% vs the benchmark; "
+    "after costs right 50%, mean net +0.70%",
+    "- Sell: n=1, called the direction 100%, mean alpha -5.00% vs the benchmark; "
+    "after costs right 100%, mean net +4.70%",
+    "- Hold: n=1, no direction claimed, mean alpha +0.50% vs the benchmark",
+    "- Underweight: n=1, called the direction 0%, mean alpha +1.20% vs the benchmark; "
+    "after costs right 0%, mean net -1.50%",
+    "",
+    "Alpha is measured over 5 trading days after each analysis date. One model sampling per cell, "
+    "and text feeds are not archived, so these figures are indicative rather than repeatable.",
+    "Costs: 30 bps round trip on every directional call, as given. Net is a call's alpha in its own "
+    "direction less the cost: one round trip per directional call, Sell treated as avoiding the stock "
+    "at the same cost; Hold claims no direction and is not charged.",
+]
+
+
+@pytest.mark.unit
+def test_r2s_summary_is_unchanged_above_the_new_lines(tmp_path):
+    lines = _summary(tmp_path, _GUARD_ROWS, cost_bps=30).render().splitlines()
+    assert lines[:len(_R2_RENDER_30)] == _R2_RENDER_30
+
+
+# --- the trial ledger ----------------------------------------------------------
+
+@pytest.mark.unit
+def test_a_sweep_records_the_settings_that_make_its_configuration(tmp_path):
+    from tradingagents.trials import config_hash
+
+    settings = {**_config(tmp_path), "llm_provider": "openai", "deep_think_llm": "deep-a",
+                "quick_think_llm": "quick-a", "holding_period_days": 5}
+    first = run_backtest(["NVDA", "NVDA", "AAPL"], ["2026-01-05", "2026-01-12"], settings,
+                         selected_analysts=["market", "news"], run_id="a")
+    assert first.config["tickers"] == ["NVDA", "AAPL"]
+    assert first.config["dates"] == ["2026-01-05", "2026-01-12"]
+    assert first.config["analysts"] == ["market", "news"]
+    assert first.config["asset_type"] == "stock"
+    assert first.config["settings"]["deep_think_llm"] == "deep-a"
+    assert first.config["settings"]["holding_period_days"] == 5
+
+    # Where a run is written and what it is called are not part of what was tried.
+    moved = run_backtest(["NVDA", "AAPL"], ["2026-01-05", "2026-01-12"],
+                         {**settings, "results_dir": str(tmp_path / "elsewhere")},
+                         selected_analysts=["market", "news"], run_id="b")
+    assert config_hash(moved.config) == config_hash(first.config)
+    other = run_backtest(["NVDA", "AAPL"], ["2026-01-05", "2026-01-12"], {**settings, "deep_think_llm": "deep-b"},
+                         selected_analysts=["market", "news"], run_id="c")
+    assert config_hash(other.config) != config_hash(first.config)
+
+
+@pytest.mark.unit
+def test_the_backtest_command_appends_one_ledger_line_per_summary(tmp_path, monkeypatch):
+    log = _log_with(tmp_path, _SIX_PERIODS)
+    first, _ = _cli(monkeypatch, log, "--cost-bps", "0")
+    again, _ = _cli(monkeypatch, log, "--cost-bps", "0")
+    costed, _ = _cli(monkeypatch, log, "--cost-bps", "12")  # another cost: another configuration
+    for result in (first, again, costed):
+        assert result.exit_code == 0, result.output
+
+    entries = [json.loads(line) for line in
+               (tmp_path / "results" / "trials.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e["kind"] for e in entries] == ["backtest"] * 3
+    assert [e["config"]["cost_bps"] for e in entries] == [0, 0, 12]
+    assert entries[0]["window"] == ["2026-01-05", "2026-02-09"]
+    assert entries[0]["periods"] == 6 and entries[0]["sharpe"] == pytest.approx(0.4472136)
+    assert entries[0]["run_id"] == "r"
+
+    assert "1 configuration, 1 run" in _flat(first.output)
+    assert "Deflated Sharpe ratio: 0.95 (N = 1 configuration)" in _flat(first.output)
+    assert "1 configuration, 2 runs" in _flat(again.output)
+    assert "2 configurations, 3 runs" in _flat(costed.output)
+    assert "(N = 2 configurations)" in _flat(costed.output)
+    assert "trials.jsonl" in _flat(first.output)
+
+
+@pytest.mark.unit
+def test_the_ledger_follows_the_results_setting_and_never_the_home_folder(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    import cli.main as m
+    from tradingagents.backtest import BacktestResult
+    from tradingagents.default_config import build_default_config
+
+    home, scratch = tmp_path / "home", tmp_path / "scratch-results"
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    monkeypatch.setenv("TRADINGAGENTS_RESULTS_DIR", str(scratch))
+    monkeypatch.setattr(m, "DEFAULT_CONFIG", build_default_config())  # the configuration as a fresh process reads it
+    log = _log_with(tmp_path, _SIX_PERIODS)
+    monkeypatch.setattr(m, "run_backtest", lambda *a, **kw: BacktestResult(run_id="r", log_path=log))
+
+    result = CliRunner().invoke(m.app, ["backtest", "NVDA", "--start", "2026-01-05", "--end", "2026-01-05"])
+
+    assert result.exit_code == 0, result.output
+    assert len((scratch / "trials.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert not home.exists()
+
+
+@pytest.mark.unit
+def test_a_browser_sweep_is_recorded_when_it_finishes_and_not_when_stopped(tmp_path, monkeypatch):
+    from cli.webui import jobs
+    from tradingagents.backtest import BacktestResult
+
+    log = _log_with(tmp_path, _SIX_PERIODS)
+    stopped = []
+    monkeypatch.setattr(jobs, "run_backtest", lambda *a, **kw: BacktestResult(
+        run_id=kw["run_id"], log_path=log, stopped=bool(stopped)))
+    config = {"research_mode": "standard", "results_dir": str(tmp_path / "results")}
+
+    finished = jobs.BacktestJob(["NVDA"], ["2026-01-05"], config, ["market"], run_id="done").start()
+    finished._thread.join(10)
+    stopped.append(True)
+    halted = jobs.BacktestJob(["NVDA"], ["2026-01-05"], config, ["market"], run_id="halted").start()
+    halted._thread.join(10)
+
+    assert (finished.status, halted.status) == (jobs.DONE, jobs.CANCELLED)
+    [line] = (tmp_path / "results" / "trials.jsonl").read_text(encoding="utf-8").splitlines()
+    entry = json.loads(line)
+    assert (entry["kind"], entry["run_id"], entry["config"]["cost_bps"]) == ("backtest", "done", None)

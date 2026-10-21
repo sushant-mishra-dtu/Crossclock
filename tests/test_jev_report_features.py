@@ -329,6 +329,44 @@ def test_the_learn_command_prints_the_evaluation(tmp_path, monkeypatch, jev_conf
 
 
 @pytest.mark.unit
+def test_the_learn_command_records_each_evaluation_in_the_trial_ledger(tmp_path, monkeypatch, jev_config):
+    """One line per evaluation in <results>/trials.jsonl; the question set, the holdout
+    and the L2 grid make its configuration, and the analysis dates its window."""
+    import cli.main as m
+    from tradingagents.outcome_model import L2_GRID
+
+    _write_run(tmp_path / "backtest" / "sweep1", _grid())
+    monkeypatch.setitem(m.DEFAULT_CONFIG, "results_dir", str(tmp_path))
+    monkeypatch.setattr(rf, "jev_client", lambda: FakeJev())
+    every = rf.QUESTIONS
+
+    runner = CliRunner()
+    first = runner.invoke(m.app, ["learn", "sweep1"])
+    again = runner.invoke(m.app, ["learn", "sweep1"])
+    held = runner.invoke(m.app, ["learn", "sweep1", "--holdout", "0.3"])
+    monkeypatch.setattr(rf, "QUESTIONS", every[:-1])  # a changed question set
+    fewer = runner.invoke(m.app, ["learn", "sweep1"])
+    for result in (first, again, held, fewer):
+        assert result.exit_code == 0, result.output
+
+    entries = [json.loads(line) for line in (tmp_path / "trials.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e["kind"] for e in entries] == ["learn"] * 4
+    assert entries[0]["config"]["questions"] == [q.id for q in every]
+    assert entries[0]["config"]["holdout"] == 0.25 and entries[2]["config"]["holdout"] == 0.3
+    assert entries[0]["config"]["l2_grid"] == list(L2_GRID)
+    assert entries[0]["config_hash"] == entries[1]["config_hash"]
+    assert entries[3]["config"]["question_set"] != entries[0]["config"]["question_set"]
+    assert entries[0]["window"] == ["2026-01-05", "2026-03-23"]
+    assert entries[0]["run_id"] == "sweep1"
+
+    assert "1 configuration, 1 run" in " ".join(first.output.split())
+    assert "1 configuration, 2 runs" in " ".join(again.output.split())
+    assert "2 configurations, 3 runs" in " ".join(held.output.split())
+    assert "3 configurations, 4 runs" in " ".join(fewer.output.split())
+    assert f"- {every[-1].id}:" not in fewer.output  # the evaluation asked the set it recorded
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("run_id, expected", [
     ("missing", "No backtest log"),
     ("../escape", "not allowed"),
