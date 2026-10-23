@@ -512,6 +512,24 @@ tradingagents learn sweep1
    date. The command prints how many distinct configurations and runs of
    `learn` the ledger holds on overlapping dates. A question kept because it
    won on one of many tries is the selection bias the count makes visible.
+9. One walk-forward path gives one score, so the dev dates are also
+   cross-validated combinatorially (López de Prado, *Advances in Financial
+   Machine Learning*, ch. 12). The dates are cut into 6 blocks, and every pair
+   of blocks is a test set: 15 splits, which make 5 backtest paths. A training
+   decision is left out when its outcome window, from analysis date to
+   resolution, touches a test block. It is also left out when it starts within
+   7 days after one (the embargo). Unlike walk-forward, decisions after a test
+   block do train. Each model is scored on every path at the L2 walk-forward
+   chose for it: the median and the 10th to 90th percentile of its log loss
+   and Brier score.
+
+   The probability of backtest overfitting (Bailey, Borwein, López de Prado
+   and Zhu, 2014) uses the same splits, over every model at every L2. In each
+   split, the configuration with the best log loss on its training decisions
+   is ranked on the test decisions. The probability is the share of splits
+   where it falls in the bottom half. For fitted models, noise gives about 0.5
+   or more: the configuration that fits its training decisions best learned
+   the most noise. With fewer than 6 dev dates this step is skipped.
 
 **Questions (14):**
 

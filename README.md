@@ -623,7 +623,8 @@ tradingagents learn sweep1
 
 - whether the model predicts better on the held-out dates than the rating alone, and than two models with no LLM in them: price only, and the rating plus price;
 - which questions help;
-- which decisions it predicted worst.
+- which decisions it predicted worst;
+- how much each model's score varies with the split: combinatorial purged cross-validation of the dev dates gives five backtest paths per model, reported as a median and a 10th to 90th percentile, and the probability of backtest overfitting says how often the configuration that fit best in sample ranked in the bottom half out of sample.
 
 The price models use six features computed in code from the daily closes before each analysis date: the returns over 20, 60 and 120 trading days, the 20-day volatility, and the distance to the 50- and 200-day averages. The closes come from the price download the backtest already cached, or from Yahoo when it is not cached; a decision with too little history (under 200 bars for the 200-day average) leaves those features out, and the summary says how many. Every split is chronological, and a decision trains a model only if its outcome was already known. The answers are cached, so running `learn` again, or adding a question, asks Jev only what it has not answered. A feature table, `report_features.csv`, is written to the run folder.
 

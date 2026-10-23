@@ -227,12 +227,13 @@ def learn(
         console.print(f"No price history for {ticker}: {reason}. Its decisions have no price features.",
                       style="yellow", markup=False)
 
-    from tradingagents.outcome_model import L2_GRID, N_FOLDS
+    from tradingagents.outcome_model import EMBARGO_DAYS, K_TEST, L2_GRID, N_FOLDS, N_GROUPS
 
     ledger = ledger_path(DEFAULT_CONFIG["results_dir"])
     dates = sorted(d.date for d in result.decisions.decisions)
     config = {"questions": [q.id for q in QUESTIONS], "question_set": question_set_version(QUESTIONS),
               "holdout": holdout, "l2_grid": list(L2_GRID), "folds": N_FOLDS,
+              "cpcv": {"groups": N_GROUPS, "test_groups": K_TEST, "embargo_days": EMBARGO_DAYS},
               "models": [m.name for m in result.evaluation.models], "jev_models": sorted(result.models)}
     try:
         count = record_trial(DEFAULT_CONFIG["results_dir"], "learn", config, (dates[0], dates[-1]),
