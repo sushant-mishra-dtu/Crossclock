@@ -47,6 +47,7 @@ from tradingagents.outcome_model import (
     check_size,
     evaluate,
 )
+from tradingagents.price_features import PRICE_COLUMNS, add_price_features, load_bars
 
 logger = logging.getLogger(__name__)
 
@@ -569,6 +570,7 @@ class LearnResult:
     cache_path: Path
     requests: int
     models: set[str]
+    price_errors: Mapping[str, str] = field(default_factory=dict)  # ticker -> why it has no prices
 
 
 def learn_from_run(
@@ -576,8 +578,13 @@ def learn_from_run(
     holdout: float = 0.25,
     questions: Sequence[FeatureQuestion] = QUESTIONS,
     client: Any = None,
+    prices: Any = None,
 ) -> LearnResult:
     """Ask the feature questions about a backtest run and score them on its outcomes.
+
+    Price features from the closes before each decision feed the no-LLM models;
+    ``prices(ticker, through)`` gives a ticker's (date, close) bars, by default
+    the analysis's cached download (``price_features.load_bars``).
 
     Raises ``NotEnoughData`` before any Jev request when the run has too few
     settled decisions to hold any out, and ``JevUnavailable`` when Jev is off.
@@ -599,11 +606,13 @@ def learn_from_run(
     with client:
         extraction = extract_features(client, decisions.decisions, questions, AnswerCache(cache_path))
 
+    price_errors = add_price_features(decisions.decisions, extraction.rows, prices or load_bars)
+
     groups = question_columns(questions)
-    columns = [*CODE_COLUMNS, *(c for cols in groups.values() for c in cols)]
+    columns = [*CODE_COLUMNS, *(c for cols in groups.values() for c in cols), *PRICE_COLUMNS]
     table = write_feature_table(run_dir / "report_features.csv", decisions.decisions,
                                 extraction.rows, columns)
     dataset = build_dataset(decisions.decisions, extraction.rows, columns)
-    evaluation = evaluate(dataset, groups, baseline=CODE_COLUMNS, holdout=holdout)
+    evaluation = evaluate(dataset, groups, baseline=CODE_COLUMNS, holdout=holdout, price=PRICE_COLUMNS)
     return LearnResult(decisions, evaluation, table, cache_path,
-                       extraction.requests, extraction.models)
+                       extraction.requests, extraction.models, price_errors)

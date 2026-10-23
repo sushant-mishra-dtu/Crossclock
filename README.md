@@ -621,11 +621,11 @@ tradingagents learn sweep1
 
 `learn` asks Jev 14 fixed questions about each settled decision's reports, debates and final decision, such as the price trend, how stretched the valuation is, and which side won the bull/bear debate. It turns the answers into numeric columns and fits a small logistic model of whether the decision beat its benchmark. It holds out the latest dates, and then reports three things:
 
-- whether the model predicts better than the rating alone on the held-out dates;
+- whether the model predicts better on the held-out dates than the rating alone, and than two models with no LLM in them: price only, and the rating plus price;
 - which questions help;
 - which decisions it predicted worst.
 
-Every split is chronological, and a decision trains a model only if its outcome was already known. The answers are cached, so running `learn` again, or adding a question, asks Jev only what it has not answered. A feature table, `report_features.csv`, is written to the run folder.
+The price models use six features computed in code from the daily closes before each analysis date: the returns over 20, 60 and 120 trading days, the 20-day volatility, and the distance to the 50- and 200-day averages. The closes come from the price download the backtest already cached, or from Yahoo when it is not cached; a decision with too little history (under 200 bars for the 200-day average) leaves those features out, and the summary says how many. Every split is chronological, and a decision trains a model only if its outcome was already known. The answers are cached, so running `learn` again, or adding a question, asks Jev only what it has not answered. A feature table, `report_features.csv`, is written to the run folder.
 
 This needs at least 40 settled decisions over 6 analysis dates, and many more before a result means much. Nothing in an analysis run uses the model yet. Details, and a live check of the questions: [Fit 5 as built](docs/jev-use-cases.md#fit-5-as-built).
 

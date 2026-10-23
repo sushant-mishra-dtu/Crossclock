@@ -223,6 +223,9 @@ def learn(
         console.print(f"[yellow]The answers come from several models ({', '.join(sorted(result.models))}); "
                       "pin jev_model and ask again before comparing questions.[/yellow]")
     console.print(f"Feature table: {result.table_path}", soft_wrap=True)
+    for ticker, reason in sorted(result.price_errors.items()):
+        console.print(f"No price history for {ticker}: {reason}. Its decisions have no price features.",
+                      style="yellow", markup=False)
 
     from tradingagents.outcome_model import L2_GRID, N_FOLDS
 

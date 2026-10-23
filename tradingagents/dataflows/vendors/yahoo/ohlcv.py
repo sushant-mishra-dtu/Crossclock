@@ -159,6 +159,17 @@ def _cache_is_fresh(data_file, as_of_dt, now) -> bool:
     return as_of_dt.date() < now.date() or (now - written).total_seconds() <= OHLCV_CACHE_TTL_SECONDS
 
 
+def cache_path(symbol: str) -> str:
+    """The file ``load_ohlcv`` keeps a symbol's latest download in.
+
+    The symbol is resolved to Yahoo's convention (XAUUSD+ -> GC=F) and checked
+    as a path segment, so a value such as ``../../tmp/x`` cannot escape the
+    cache directory.
+    """
+    safe_symbol = safe_ticker_component(normalize_symbol(symbol))
+    return os.path.join(get_config()["data_cache_dir"], f"{safe_symbol}-YFin-data.csv")
+
+
 def load_ohlcv(symbol: str, as_of_date: str, fill_gaps: bool = True) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
@@ -170,11 +181,10 @@ def load_ohlcv(symbol: str, as_of_date: str, fill_gaps: bool = True) -> pd.DataF
     continuous series. Pass ``False`` to read the values as the vendor reported
     them, leaving a cell that was never reported empty.
     """
-    # Resolve broker/forex symbols (XAUUSD+ -> GC=F) to Yahoo's convention,
-    # then reject values that would escape the cache directory when
-    # interpolated into the cache filename (e.g. ``../../tmp/x``).
+    # Resolve broker/forex symbols (XAUUSD+ -> GC=F) to Yahoo's convention;
+    # cache_path also rejects values that would escape the cache directory.
     canonical = normalize_symbol(symbol)
-    safe_symbol = safe_ticker_component(canonical)
+    data_file = cache_path(symbol)
 
     config = get_config()
     as_of_dt = pd.to_datetime(as_of_date).normalize()
@@ -189,10 +199,6 @@ def load_ohlcv(symbol: str, as_of_date: str, fill_gaps: bool = True) -> pd.DataF
     end_str = (now + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
     os.makedirs(config["data_cache_dir"], exist_ok=True)
-    data_file = os.path.join(
-        config["data_cache_dir"],
-        f"{safe_symbol}-YFin-data.csv",
-    )
 
     # A cached file may be empty if a prior fetch failed (unknown symbol,
     # transient rate limit). Treat an empty/columnless cache as a miss and

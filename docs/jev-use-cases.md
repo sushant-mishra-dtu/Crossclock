@@ -468,15 +468,24 @@ tradingagents learn sweep1
    probability. That makes 24 Jev columns. Code adds `rating`, the Portfolio
    Manager's own rating from Buy (1) to Sell (−1), read from the text before the
    claim-check block, so a decision sent to `REVIEW` keeps it. It also adds
-   `review`, 1 when the logged rating is `REVIEW`.
+   `review`, 1 when the logged rating is `REVIEW`. Code also adds six price
+   features ([`price_features.py`](../tradingagents/price_features.py)) from the
+   daily closes dated before the analysis date: returns over 20, 60 and 120
+   bars, the 20-day volatility of log returns, and the distance to the 50- and
+   200-day averages. They are read from the price download the backtest cached,
+   or fetched from Yahoo when the cache does not reach the date. A feature
+   needing more bars than a decision has is left out.
 4. Answers are cached in `<data_cache_dir>/jev_report_features.json`, keyed by
    the model name, the question and the state. Asking again sends nothing. A new
    or reworded question sends only that question. After a failed request, the
    answers already received stay cached.
-5. The target is whether the decision's alpha was above 0. Three L2-penalised
+5. The target is whether the decision's alpha was above 0. Five L2-penalised
    logistic models are fitted: the base rate (no columns), the rating (`rating`
-   and `review`), and the rating plus the Jev columns. A missing document's
-   columns take the training mean.
+   and `review`), price only and the rating plus price (no LLM in either: When
+   Reasoning Fails, arXiv 2511.08608, found LLM rankings on NIFTY names beat no
+   price-feature model after costs), and the rating plus the Jev columns. A
+   missing document's columns, or a missing price feature, take the training
+   mean; the output says how many decisions lacked each price feature.
 6. The last 25% of analysis dates are held out (`--holdout`). The earlier dates
    are cross-validated walk-forward, in 4 expanding folds. A decision trains a
    model only if its resolution date is before the first date that model is
